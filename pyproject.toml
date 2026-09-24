@@ -1,0 +1,26 @@
+[project]
+name = "filecleaner"
+version = "0.1.0"
+description = "Скан, проверка, сортировка и удаление ненужного на Windows — только с подтверждения пользователя"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+filecleaner = "filecleaner.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["filecleaner"]
+
+[tool.setuptools.package-data]
+filecleaner = ["default_rules.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
