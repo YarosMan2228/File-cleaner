@@ -127,13 +127,14 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
     ai = ai if ai is not None else LocalAI(rules)
     ai_budget = int(rules.get("ai.max_items", 500)) if sectors and ai.available() else 0
 
-    def ask_ai(name: str, sources: list[str], snippet: str, key: str) -> tuple[dict | None, str]:
+    def ask_ai(name: str, sources: list[str], snippet: str, key: str,
+               kind: str | None = None) -> tuple[dict | None, str]:
         nonlocal ai_budget
         if ai_budget <= 0:
             return None, ""
         ai_budget -= 1
         progress(f"ИИ смотрит: {name}")
-        sector_name, why = ai.classify(name, sectors, sources, snippet, key)
+        sector_name, why = ai.classify(name, sectors, sources, snippet, key, kind)
         sector = next((s for s in sectors if s["name"] == sector_name), None)
         return sector, f"ИИ: {why or 'по содержимому'}" if sector else ""
 
@@ -194,7 +195,7 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
         sector, why = match_sector(name_tokens(Path(name).stem), domains(source), kind, sectors)
         if sector is None and kind in AI_TYPES and not is_cloud_only(st):
             key = f"{key_of(entry.path)}|{st.st_size}|{st.st_mtime}"
-            sector, why = ask_ai(name, domains(source), text_snippet(Path(entry.path)), key)
+            sector, why = ask_ai(name, domains(source), text_snippet(Path(entry.path)), key, kind)
         if sector:
             base = sector_dir(folder, sector) / (kind or config.OTHER_TYPE)
             label = f"{sector['name']} / {kind or config.OTHER_TYPE}"

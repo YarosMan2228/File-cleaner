@@ -25,8 +25,9 @@ OFFICE_PARTS = {
     "pptx": [f"ppt/slides/slide{i}.xml" for i in range(1, 6)],
     "xlsx": ["xl/sharedStrings.xml"],
 }
-SNIPPET = 1500
+SNIPPET = 1200
 MAX_PDF = 200 * 1024 * 1024
+PROMPT_VERSION = 4  # меняется вместе с текстом запроса — старые ответы из кэша не используются
 
 
 def readable_name(name: str) -> str:
@@ -84,6 +85,8 @@ class LocalAI:
         self.enabled = bool(rules.get("ai.enabled", False))
         self.url = str(rules.get("ai.url", "http://localhost:11434")).rstrip("/")
         self.model = str(rules.get("ai.model", "qwen2.5:7b"))
+        self.min_confidence = int(rules.get("ai.min_confidence", 70))
+        self.about = str(rules.get("ai.about", "") or "").strip()
         self._available: bool | None = None
         self._cache_path = config.DATA_DIR / "ai_cache.json"
         try:
@@ -106,7 +109,8 @@ class LocalAI:
     def _ask(self, prompt: str) -> dict:
         body = json.dumps({
             "model": self.model, "prompt": prompt, "stream": False, "format": "json",
-            "options": {"temperature": 0},
+            # Короткий контекст — модель целиком помещается в видеокарту на 6 ГБ и отвечает быстрее.
+            "options": {"temperature": 0, "num_ctx": 2048, "num_predict": 120},
         }).encode("utf-8")
         request = urllib.request.Request(self.url + "/api/generate", data=body,
                                          headers={"Content-Type": "application/json"})
@@ -124,28 +128,51 @@ class LocalAI:
             self._cache_path.write_text(json.dumps(self._cache, ensure_ascii=False), encoding="utf-8")
 
     def classify(self, name: str, sectors: list[dict], sources: list[str], snippet: str,
-                 cache_key: str) -> tuple[str | None, str]:
+                 cache_key: str, kind: str | None = None) -> tuple[str | None, str]:
         """Сектор для файла или папки — или None, если модель не уверена."""
+        # Сектор, привязанный к типам файлов («Виртуалки» — образы дисков), для других типов не предлагаем.
+        sectors = [s for s in sectors if not s.get("types") or kind in s["types"]]
         names = [s["name"] for s in sectors]
         if not names:
             return None, ""
-        cached = self._cache.get(cache_key)
+        key = f"{cache_key}|v{PROMPT_VERSION}|{','.join(names)}"
+        cached = self._cache.get(key)
         if cached is None:
             prompt = (
-                "You sort a person's files into folders by topic. Folders:\n"
-                + "\n".join(_describe(s) for s in sectors) + "\n\n"
+                "You help a person sort their files into topic folders.\n"
+                + (f"About the person: {self.about}\n" if self.about else "")
+                + "Folders:\n" + "\n".join(_describe(s) for s in sectors) + "\n\n"
                 f"File name: {readable_name(name)}\n"
                 f"Downloaded from: {', '.join(sources) or 'unknown'}\n"
                 f"Beginning of the content: {snippet or '(not available)'}\n\n"
-                "Answer strictly as JSON: {\"folder\": \"<exact folder name from the list, or empty "
-                "if none fits or you are not sure>\", \"why\": \"<short reason in Russian>\"}"
+                "Decide which folder this file belongs to.\n"
+                "- Choose a folder only if the file name or content relates to its topic.\n"
+                "- If the name is generic and there is no telling content (like \"Admin.docx\" or "
+                "\"scan_001.pdf\"), answer with an empty folder.\n"
+                "- confidence: 90-100 = the topic is named explicitly in the name or content; "
+                "60-89 = a strong hint; below 60 = a guess.\n"
+                "Answer strictly as JSON: {\"folder\": \"<exact folder name from the list or empty>\", "
+                "\"confidence\": <0-100>, \"why\": \"<up to 10 words in Russian>\"}"
             )
             cached = self._ask(prompt)
             if "folder" not in cached:
                 return None, ""  # модель не ответила — не запоминаем, спросим в следующий раз
-            self._cache[cache_key] = cached
-        folder = str(cached.get("folder", "")).strip()
-        return (folder, str(cached.get("why", "")).strip()) if folder in names else (None, "")
+            self._cache[key] = cached
+        folder = _match_folder(str(cached.get("folder", "")), names)
+        try:
+            confidence = int(float(cached.get("confidence", 0)))
+        except (TypeError, ValueError):
+            confidence = 0
+        if folder and confidence >= self.min_confidence:
+            return folder, str(cached.get("why", "")).strip()
+        return None, ""
+
+
+def _match_folder(answer: str, names: list[str]) -> str | None:
+    """Модель иногда отвечает «Учёба: учёба в университете…» вместо «Учёба» — берём имя до двоеточия."""
+    text = answer.strip().lstrip("-• ").strip()
+    candidate = text.split(":", 1)[0].strip().casefold()
+    return next((name for name in names if name.casefold() == candidate), None)
 
 
 def _describe(sector: dict) -> str:
