@@ -30,7 +30,8 @@ class FakeOllama(BaseHTTPRequestHandler):
     def do_POST(self):
         request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         FakeOllama.calls.append(request)
-        folder = "Работа" if "BACnet" in request["prompt"] else ""
+        content = request["prompt"].split("Beginning of the content:", 1)[1]
+        folder = "Работа" if "BACnet" in content else ""
         self._reply({"response": json.dumps({"folder": folder, "why": "про автоматизацию зданий"})})
 
 
@@ -75,3 +76,19 @@ def test_text_snippet_from_docx(tmp_path):
     with zipfile.ZipFile(doc, "w") as z:
         z.writestr("word/document.xml", "<w:document><w:t>Отчёт по лабораторной</w:t></w:document>")
     assert text_snippet(doc) == "Отчёт по лабораторной"
+
+
+def test_prompt_has_descriptions_and_readable_names(sandbox, rules, ollama):
+    rules.data["ai"].update(enabled=True, url=ollama)
+    write(sandbox / "Downloads" / "%D0%A2%D0%97.docx", b"not a real docx")
+    organizer.plan_sort(sandbox / "Downloads", rules, check_references=False)
+    [call] = FakeOllama.calls
+    assert "File name: ТЗ.docx" in call["prompt"]
+    assert "автоматизация зданий" in call["prompt"]            # описание сектора «Работа»
+
+
+def test_failed_answer_is_not_cached(sandbox, rules):
+    rules.data["ai"].update(enabled=True, url="http://127.0.0.1:9")
+    ai = LocalAI(rules)
+    sector, _ = ai.classify("x.pdf", rules.sectors, [], "", "key")
+    assert sector is None and "key" not in ai._cache

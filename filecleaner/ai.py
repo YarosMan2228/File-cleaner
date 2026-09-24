@@ -6,11 +6,14 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
+from urllib.parse import unquote
 
 from . import config
 from .fsutil import long_path
@@ -23,12 +26,43 @@ OFFICE_PARTS = {
     "xlsx": ["xl/sharedStrings.xml"],
 }
 SNIPPET = 1500
+MAX_PDF = 200 * 1024 * 1024
+
+
+def readable_name(name: str) -> str:
+    """«%D0%A2%D0%97.docx» (так браузер иногда сохраняет имя) → «ТЗ.docx»."""
+    return unquote(name) if re.search(r"%[0-9A-Fa-f]{2}", name) else name
+
+
+def _pdf_text(path: Path) -> str:
+    """Текст первых страниц PDF, если установлен pypdf. У сканов без текстового слоя текста нет."""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return ""
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+    try:
+        if os.path.getsize(long_path(path)) > MAX_PDF:
+            return ""
+        reader = PdfReader(long_path(path))
+        if reader.is_encrypted:
+            return ""
+        parts: list[str] = []
+        for page in reader.pages[:2]:
+            parts.append(page.extract_text() or "")
+            if sum(len(p) for p in parts) >= SNIPPET:
+                break
+    except Exception:  # pypdf по-разному падает на битых файлах — это не повод останавливать сортировку
+        return ""
+    return re.sub(r"\s+", " ", " ".join(parts)).strip()[:SNIPPET]
 
 
 def text_snippet(path: Path) -> str:
-    """Начало текста документа (txt, docx, pptx, xlsx) — чтобы модель поняла, о чём он."""
+    """Начало текста документа (txt, docx, pptx, xlsx, pdf) — чтобы модель поняла, о чём он."""
     ext = path.suffix.lower().lstrip(".")
     try:
+        if ext == "pdf":
+            return _pdf_text(path)
         if ext in TEXT_EXTS:
             with open(long_path(path), "rb") as fh:
                 return fh.read(SNIPPET * 2).decode("utf-8", "ignore")[:SNIPPET]
@@ -97,20 +131,32 @@ class LocalAI:
             return None, ""
         cached = self._cache.get(cache_key)
         if cached is None:
-            described = "\n".join(
-                f"- {s['name']}: " + ", ".join(s.get("keywords", [])[:12] + s.get("sources", [])[:5])
-                for s in sectors
-            )
             prompt = (
                 "You sort a person's files into folders by topic. Folders:\n"
-                f"{described}\n\n"
-                f"File name: {name}\n"
+                + "\n".join(_describe(s) for s in sectors) + "\n\n"
+                f"File name: {readable_name(name)}\n"
                 f"Downloaded from: {', '.join(sources) or 'unknown'}\n"
                 f"Beginning of the content: {snippet or '(not available)'}\n\n"
                 "Answer strictly as JSON: {\"folder\": \"<exact folder name from the list, or empty "
                 "if none fits or you are not sure>\", \"why\": \"<short reason in Russian>\"}"
             )
             cached = self._ask(prompt)
+            if "folder" not in cached:
+                return None, ""  # модель не ответила — не запоминаем, спросим в следующий раз
             self._cache[cache_key] = cached
         folder = str(cached.get("folder", "")).strip()
         return (folder, str(cached.get("why", "")).strip()) if folder in names else (None, "")
+
+
+def _describe(sector: dict) -> str:
+    """Строка о секторе для модели: описание, ключевые слова, сайты, типы файлов."""
+    parts = []
+    if sector.get("description"):
+        parts.append(str(sector["description"]))
+    if sector.get("keywords"):
+        parts.append("keywords: " + ", ".join(map(str, sector["keywords"][:15])))
+    if sector.get("sources"):
+        parts.append("sites: " + ", ".join(map(str, sector["sources"][:6])))
+    if sector.get("types"):
+        parts.append("file types: " + ", ".join(map(str, sector["types"])))
+    return f"- {sector['name']}: " + "; ".join(parts)

@@ -92,20 +92,24 @@ unknown_to = ""                     # куда класть файлы неиз�
 # Секторы — папки по специализации. Файл попадает в сектор, если он скачан
 # с одного из сайтов (sources), в имени есть ключевое слово (keywords)
 # или его тип в списке types. Внутри сектора файлы раскладываются по типам.
+# description — описание для локального ИИ: чем подробнее, тем точнее он раскладывает.
 # target — переселить сектор в другое место (например на диск B:).
 
 [[sector]]
 name = "Учёба"
+description = "учёба в университете (RTU): лекции, лабораторные, домашние задания, курсовые, учебные материалы"
 sources = ["rtu.lv", "ortus.rtu.lv", "estudijas.rtu.lv"]
 keywords = ["rtu", "ortus", "lab", "lecture", "lekcija", "homework", "uzdevums", "курсовая", "лабораторная", "лекция", "домашка"]
 
 [[sector]]
 name = "Работа"
+description = "работа: автоматизация зданий (Siemens Desigo, ABT, BACnet, HVAC, АСУД), проектная документация"
 sources = ["siemens.com", "siemens.cloud", "daikin.eu", "daikin.com"]
 keywords = ["siemens", "desigo", "dcc", "abt", "daikin", "bacnet", "hvac"]
 
 [[sector]]
 name = "Виртуалки"
+description = "образы дисков и виртуальные машины"
 types = ["Образы дисков"]
 # target = "B:/Виртуалки"
 
