@@ -127,14 +127,15 @@ def installed_programs() -> list[str]:
     return names
 
 
-def virtualbox_disks() -> set[str] | None:
-    """Диски, подключённые к виртуалкам VirtualBox. None — VirtualBox не найден."""
+def virtualbox_disks() -> dict[str, str] | None:
+    """Диски, подключённые к виртуалкам VirtualBox: {путь в нижнем регистре: путь}. None — VirtualBox не найден."""
     registry = config.HOME / ".VirtualBox" / "VirtualBox.xml"
     if not registry.exists():
         return None
 
-    def disks_in(xml_path: Path) -> tuple[set[str], list[str]]:
-        disks, machines = set(), []
+    def disks_in(xml_path: Path) -> tuple[dict[str, str], list[str]]:
+        disks: dict[str, str] = {}
+        machines: list[str] = []
         try:
             root = ET.parse(xml_path).getroot()
         except (OSError, ET.ParseError):
@@ -144,14 +145,15 @@ def virtualbox_disks() -> set[str] | None:
                 location = el.get("location")
                 if not os.path.isabs(location):
                     location = os.path.join(xml_path.parent, location)
-                disks.add(os.path.normcase(os.path.normpath(location)))
+                location = os.path.normpath(location)
+                disks[os.path.normcase(location)] = location
             elif el.tag.endswith("MachineEntry") and el.get("src"):
                 machines.append(el.get("src"))
         return disks, machines
 
     disks, machines = disks_in(registry)
     for machine in machines:
-        disks |= disks_in(Path(machine))[0]
+        disks.update(disks_in(Path(machine))[0])
     return disks
 
 

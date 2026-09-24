@@ -167,10 +167,11 @@ def _print_check(result: analyzers.CheckResult) -> list[str]:
     """Печатает сводку; возвращает названия групп, у которых есть номер (их можно пропустить)."""
     numbered: list[str] = []
     totals = analyzers.group_totals(result.findings)
-    examples: dict[str, list[analyzers.Finding]] = defaultdict(list)
+    examples: dict[tuple[str, str], list[analyzers.Finding]] = defaultdict(list)
     for finding in sorted(result.findings, key=lambda f: -f.size):
-        if len(examples[finding.group]) < 3:
-            examples[finding.group].append(finding)
+        bucket = examples[(finding.group, finding.mode)]
+        if len(bucket) < 3 and not finding.rule.startswith("junk."):
+            bucket.append(finding)
     for mode in ("delete", "review", "report"):
         rows = [row for row in totals if row[1] == mode]
         if not rows:
@@ -185,7 +186,7 @@ def _print_check(result: analyzers.CheckResult) -> list[str]:
                 prefix = f"{len(numbered):>3}. "
             print(prefix + line(group, size, objects(count)))
             if mode != "delete":
-                for f in examples[group]:
+                for f in examples[(group, mode)]:
                     print(dim(f"        {display(f.path)} — {f.reason}"))
     if result.notes:
         print(bold("\nЗамечания:"))

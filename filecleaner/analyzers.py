@@ -153,6 +153,9 @@ def system_junk(rules: Rules, now: float, progress: Progress = _quiet) -> tuple[
 
 
 # ======================================================================= хлам среди файлов
+_MEDIA_TYPES = {"Видео", "Музыка", "Изображения", "Документы", "Таблицы", "Презентации"}
+
+
 def user_junk(recs: list[FileRec], rules: Rules, now: float) -> list[Finding]:
     partial_age = float(rules.get("files.partial_min_age_days", 7))
     out = []
@@ -161,12 +164,20 @@ def user_junk(recs: list[FileRec], rules: Rules, now: float) -> list[Finding]:
             continue
         low = rec.name.lower()
         age = age_days(rec.mtime, now)
+        force_report = False
         if low in ("thumbs.db", "ehthumbs.db", ".ds_store") or (low.startswith("._") and rec.size <= 4096):
             rule, group, reason = "files.thumbs", "Служебные файлы", "миниатюры/служебный файл, система создаст заново"
         elif low.startswith("~$") and rec.size < 8192 and age >= 1:
             rule, group, reason = "files.office_locks", "Временные файлы Office", "остался от закрытого документа Office"
         elif rec.ext == "tmp" and age >= 1:
-            rule, group, reason = "files.office_locks", "Временные файлы Office", f"временный .tmp, не менялся {age:.0f} дн."
+            rule, group = "files.office_locks", "Временные файлы (.tmp)"
+            inner = config.EXT_TO_TYPE.get(Path(rec.path.stem).suffix.lower().lstrip("."))
+            if inner in _MEDIA_TYPES or rec.size >= 1024 * 1024:
+                # «video123.mp4.tmp» от Zoom и т.п. — может быть единственной копией незаконченной записи.
+                force_report = True
+                reason = "похоже на незавершённую запись или конвертацию — возможно, это единственная копия"
+            else:
+                reason = f"временный .tmp, не менялся {age:.0f} дн."
         elif rec.ext in config.PARTIAL_EXTS and age >= partial_age:
             rule, group, reason = ("files.partial_downloads", "Недокачанные файлы",
                                    f"загрузка не завершилась, файл не менялся {age:.0f} дн.")
@@ -174,11 +185,15 @@ def user_junk(recs: list[FileRec], rules: Rules, now: float) -> list[Finding]:
             continue
         mode = rules.mode(rule)
         if mode != "off":
-            out.append(Finding(rule, group, rec.path, rec.size, mode, reason))
+            out.append(Finding(rule, group, rec.path, rec.size, "report" if force_report else mode, reason))
     return out
 
 
 def empty_dirs(roots: dict[str, Path], rules: Rules, now: float) -> list[Finding]:
+    """Пустые папки прямо в Загрузках и на Рабочем столе (целиком пустые, вместе с пустыми вложенными).
+
+    Пустые папки внутри других папок не трогаем: это может быть часть структуры (бэкап, проект).
+    """
     mode = rules.mode("files.empty_dirs")
     if mode == "off":
         return []
@@ -188,8 +203,14 @@ def empty_dirs(roots: dict[str, Path], rules: Rules, now: float) -> list[Finding
         root = roots.get(name)
         if root is None:
             continue
-        for folder in find_empty_dirs(root, min_age, now):
-            out.append(Finding("files.empty_dirs", "Пустые папки", folder, 0, mode, "пустая папка", is_dir=True, count=0))
+        found = find_empty_dirs(root, min_age, now)
+        empty = {key_of(d) for d in found}
+        root_key = key_of(root)
+        for folder in found:
+            top = os.path.join(root_key, key_of(folder)[len(root_key):].lstrip("\\/").split(os.sep)[0])
+            if top in empty:
+                out.append(Finding("files.empty_dirs", "Пустые папки", folder, 0, mode, "пустая папка",
+                                   is_dir=True, count=0))
     return out
 
 
@@ -203,8 +224,22 @@ def looks_like_copy(stem: str) -> bool:
     return bool(_COPY_SUFFIX.search(stem) or _COPY_PREFIX.search(stem))
 
 
-def _transient(path: Path, transient: list[Path]) -> bool:
-    return any(is_under(path, t) for t in transient)
+def dump_dirs(roots: dict[str, Path], rules: Rules) -> set[str]:
+    """Папки-«свалки», куда всё падает само: Загрузки, Рабочий стол, Telegram Desktop, Temp."""
+    dirs = {key_of(config.TEMP)}
+    for name in ("downloads", "desktop"):
+        root = roots.get(name)
+        if root is None:
+            continue
+        dirs.add(key_of(root))
+        for keep in rules.get("sort.keep_folders", []) or []:
+            dirs.add(key_of(root / keep))
+    return dirs
+
+
+def _loose(path: Path, dump: set[str]) -> bool:
+    """Лежит прямо в «свалке» (а не внутри распакованного дистрибутива или проекта в ней)."""
+    return key_of(path.parent) in dump
 
 
 def _identical_groups(index: Index, recs: list[FileRec], progress: Progress) -> list[list[FileRec]]:
@@ -242,7 +277,7 @@ def _identical_groups(index: Index, recs: list[FileRec], progress: Progress) -> 
 
 
 def _duplicate_folders(index: Index, recs: list[FileRec], roots: dict[str, Path], rules: Rules,
-                       transient: list[Path], progress: Progress) -> tuple[list[Finding], list[Path]]:
+                       dump: set[str], progress: Progress) -> tuple[list[Finding], list[Path]]:
     """Одинаковые папки целиком: те же файлы с теми же именами и содержимым."""
     mode = rules.mode("duplicates.folders")
     if mode == "off":
@@ -315,7 +350,7 @@ def _duplicate_folders(index: Index, recs: list[FileRec], roots: dict[str, Path]
                 created = os.stat(long_path(folder)).st_birthtime
             except (OSError, AttributeError):
                 created = 0.0
-            return (looks_like_copy(folder.name), _transient(folder, transient), created, len(folder.parts))
+            return (looks_like_copy(folder.name), _loose(folder, dump), created, len(folder.parts))
 
         keeper = min(folders, key=keeper_key)
         count, total = stats[key_of(keeper)]
@@ -325,7 +360,7 @@ def _duplicate_folders(index: Index, recs: list[FileRec], roots: dict[str, Path]
             # Та же логика, что для файлов: копия рядом, «Папка (2)» или в Загрузках — на проверку,
             # копия в другой «осмысленной» папке — только отчёт.
             obvious = (key_of(folder.parent) == key_of(keeper.parent) or looks_like_copy(folder.name)
-                       or _transient(folder, transient))
+                       or _loose(folder, dump))
             rule = "duplicates.folders" if obvious else "duplicates.other"
             folder_mode = rules.mode(rule)
             if folder_mode == "off":
@@ -352,9 +387,9 @@ def _real_folder(key: str, known: dict[str, Path]) -> Path:
 
 
 def duplicates(index: Index, recs: list[FileRec], roots: dict[str, Path], rules: Rules,
-               transient: list[Path], progress: Progress = _quiet) -> list[Finding]:
+               dump: set[str], progress: Progress = _quiet) -> list[Finding]:
     usable = [r for r in recs if not r.cloud]
-    findings, removed_dirs = _duplicate_folders(index, usable, roots, rules, transient, progress)
+    findings, removed_dirs = _duplicate_folders(index, usable, roots, rules, dump, progress)
     removed_keys = [key_of(d) for d in removed_dirs]
     min_size = rules.size("duplicates.min_size", "100KB")
     candidates = [
@@ -363,7 +398,7 @@ def duplicates(index: Index, recs: list[FileRec], roots: dict[str, Path], rules:
         and not any(r.key.startswith(k + os.sep) for k in removed_keys)
     ]
     for group in _identical_groups(index, candidates, progress):
-        keeper = min(group, key=lambda r: (looks_like_copy(r.path.stem), _transient(r.path, transient),
+        keeper = min(group, key=lambda r: (looks_like_copy(r.path.stem), _loose(r.path, dump),
                                            r.ctime, len(r.path.parts), len(str(r.path))))
         for rec in group:
             if rec is keeper:
@@ -374,7 +409,7 @@ def duplicates(index: Index, recs: list[FileRec], roots: dict[str, Path], rules:
             elif looks_like_copy(rec.path.stem):
                 rule, group_name = "duplicates.copy_names", "Дубликаты - имя-копия"
                 reason = f"имя похоже на копию, оригинал: {display(keeper.path)}"
-            elif _transient(rec.path, transient):
+            elif _loose(rec.path, dump):
                 rule, group_name = "duplicates.in_downloads", "Дубликаты - лишние в Загрузках"
                 reason = f"оригинал лежит в {display(keeper.path)}"
             else:
@@ -460,33 +495,50 @@ def product_tokens(stem: str) -> tuple[str, ...]:
     return tuple(t for t in name_tokens(stem) if not t.isdigit() and len(t) >= 2 and t not in _INSTALLER_NOISE)
 
 
+def _base_stem(stem: str) -> str:
+    """Имя без «(1)», «— копия»: «setup-2.1 (1)» → «setup-2.1»."""
+    return _COPY_PREFIX.sub("", _COPY_SUFFIX.sub("", stem)).strip()
+
+
+_ARCH = re.compile(r"x86[_-]64|x64|x86|amd64|arm64|aarch64|win64|win32|(32|64)[-_ ]?bit|(?<=[_\-. ])(32|64)(?=$|[_\-. ])",
+                   re.I)
+
+
 def _version(stem: str) -> tuple[int, ...]:
-    return tuple(int(n) for n in re.findall(r"\d+", stem)[:6])
+    """Номер версии из имени; разрядность (x64, _64, 64-bit) — не версия."""
+    return tuple(int(n) for n in re.findall(r"\d+", _ARCH.sub(" ", _base_stem(stem)))[:6])
 
 
-def installers(recs: list[FileRec], rules: Rules) -> list[Finding]:
+def installers(recs: list[FileRec], rules: Rules, dump: set[str]) -> list[Finding]:
+    """Только установщики, которые лежат сами по себе в Загрузках/на Рабочем столе.
+
+    Установщики внутри распакованных дистрибутивов не трогаем — без них дистрибутив сломается.
+    """
     modes = {k: rules.mode(f"installers.{k}") for k in ("installed", "old_versions", "other")}
     if all(m == "off" for m in modes.values()):
         return []
-    candidates = [r for r in recs if r.ext in config.INSTALLER_EXTS and r.root in ("downloads", "desktop")
+    candidates = [r for r in recs if r.ext in config.INSTALLER_EXTS and _loose(r.path, dump)
                   and not r.cloud and not r.protected]
     programs = [(name, set(name_tokens(name))) for name in installed_programs()]
     out: list[Finding] = []
     by_product: dict[tuple[str, ...], list[FileRec]] = defaultdict(list)
     for rec in candidates:
-        tokens = product_tokens(rec.path.stem)
+        tokens = product_tokens(_base_stem(rec.path.stem))
         if tokens:
             by_product[tokens].append(rec)
     old: dict[str, FileRec] = {}
-    for tokens, group in by_product.items():
+    for group in by_product.values():
         if len(group) < 2:
             continue
-        group.sort(key=lambda r: (_version(r.path.stem), r.mtime))
-        newest = group[-1]
-        for rec in group[:-1]:
-            old[rec.key] = newest
+        newest = max(group, key=lambda r: (_version(r.path.stem), r.mtime))
+        for rec in group:
+            # Сравниваем только настоящие номера версий. «file (1).msi» той же версии — это копия
+            # (её найдёт поиск дубликатов), а файл без версии в имени сравнить не с чем.
+            mine, best = _version(rec.path.stem), _version(newest.path.stem)
+            if mine and best and mine < best:
+                old[rec.key] = newest
     for rec in candidates:
-        tokens = product_tokens(rec.path.stem)
+        tokens = product_tokens(_base_stem(rec.path.stem))
         if rec.key in old and modes["old_versions"] != "off":
             out.append(Finding("installers.old_versions", "Установщики - старые версии", rec.path, rec.size,
                                modes["old_versions"], f"есть более новый: {old[rec.key].name}",
@@ -510,7 +562,7 @@ def vm_disks(recs: list[FileRec], rules: Rules) -> list[Finding]:
     registered = virtualbox_disks()
     if registered is None:
         return []
-    names: dict[str, str] = {os.path.basename(d): d for d in registered}
+    names: dict[str, str] = {os.path.basename(key): path for key, path in registered.items()}
     out = []
     for rec in recs:
         if rec.ext != "vdi" or rec.cloud or os.path.normcase(str(rec.path)) in registered:
@@ -586,16 +638,16 @@ def run_check(index: Index, roots: dict[str, Path], rules: Rules, progress: Prog
     now = now or time.time()
     fresh = float(rules.get("scan.min_file_age_minutes", 30)) / (24 * 60)
     recs = [r for r in index.files(roots.keys()) if age_days(r.mtime, now) >= fresh]
-    transient = [p for p in (roots.get("downloads"), roots.get("desktop"), config.TEMP) if p]
+    dump = dump_dirs(roots, rules)
 
     findings, notes, prune = system_junk(rules, now, progress)
     progress("Ищу хлам среди файлов…")
     findings += user_junk(recs, rules, now)
     findings += empty_dirs(roots, rules, now)
-    findings += duplicates(index, recs, roots, rules, transient, progress)
+    findings += duplicates(index, recs, roots, rules, dump, progress)
     progress("Проверяю архивы, установщики и диски виртуалок…")
     findings += extracted_archives(recs, rules)
-    findings += installers(recs, rules)
+    findings += installers(recs, rules, dump)
     findings += vm_disks(recs, rules)
     findings += old_files(recs, rules, now, {key_of(f.path) for f in findings})
     findings = resolve(findings)

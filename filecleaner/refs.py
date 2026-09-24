@@ -32,7 +32,7 @@ _SKIP_APPDATA = {
     "d3dscache", "npm-cache", "pip", "webcache", "grshadercache",
 }
 _CONFIG_EXTS = {".json", ".xml", ".ini", ".cfg", ".conf", ".config", ".yaml", ".yml", ".toml", ".vbox",
-                ".properties", ".txt", ".settings", ".plist"}
+                ".properties", ".txt", ".settings", ".plist", ".vmls", ".vmx"}
 _CONFIG_NAMES = {"preferences", "local state", "settings"}
 # Эти ссылки программа исправляет сама, поэтому оставлять симлинк ради них не нужно.
 HANDLED = {"office"}
