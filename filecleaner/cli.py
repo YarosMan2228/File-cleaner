@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from . import __version__, analyzers, compress, config, journal, organizer, pipeline, report, review
+from .ai import LocalAI
 from .fsutil import display, human_size, plural
 from .index import Index
 from .rules import Rules, RulesError, ensure_user_rules
@@ -572,6 +573,14 @@ def cmd_rules(args, rules: Rules, interactive: bool = False) -> int:
             print(f"  {bold(titles[mode])}: " + ", ".join(grouped[mode]))
     sectors = ", ".join(s["name"] for s in rules.sectors) or "нет"
     print(f"  {bold('секторы')}: {sectors}")
+    ai = LocalAI(rules)
+    if not ai.enabled:
+        status = "выключен ([ai] enabled = false)"
+    elif ai.available():
+        status = green(f"включён, модель {ai.model} готова")
+    else:
+        status = yellow(f"включён, но модель {ai.model} недоступна — запущен ли Ollama? (ollama pull {ai.model})")
+    print(f"  {bold('ИИ')}: {status}")
     if getattr(args, "edit", False) or (interactive and confirm("Открыть правила в Блокноте?")):
         open_in_system(path)
     return 0
