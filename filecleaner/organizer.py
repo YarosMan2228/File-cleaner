@@ -16,7 +16,7 @@ from .ai import LocalAI, text_snippet
 from .analyzers import Finding
 from .fsutil import (
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, PartialMoveError, attributes, display, is_cloud_only,
-    is_link, key_of, keyword_match, list_dir, long_path, name_tokens, unique_path, walk,
+    is_link, key_of, keyword_match, list_dir, long_path, looks_like_program_folder, name_tokens, unique_path, walk,
 )
 from .journal import Session
 from .rules import Rules
@@ -121,8 +121,15 @@ def _same_content(a: Path, b: Path) -> bool:
 
 # ======================================================================= план
 def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: float | None = None,
-              check_references: bool = True, ai: LocalAI | None = None) -> SortPlan:
+              check_references: bool = True, ai: LocalAI | None = None,
+              move_folders: bool | None = None) -> SortPlan:
+    """move_folders=None — как в правилах ([sort] move_folders); False — только отдельные файлы."""
     now = now or time.time()
+    listing = list_dir(str(folder)) or []
+    if looks_like_program_folder({e.name.lower() for e in listing}):
+        return SortPlan(folder, [], Counter({"это папка программы или проекта — не раскладываю": 1}), [])
+    if move_folders is None:
+        move_folders = bool(rules.get("sort.move_folders", True))
     sectors = rules.sectors
     ai = ai if ai is not None else LocalAI(rules)
     ai_budget = int(rules.get("ai.max_items", 500)) if sectors and ai.available() else 0
@@ -154,7 +161,7 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
     unknown: list[Path] = []
     skipped: Counter = Counter()
 
-    for entry in sorted(list_dir(str(folder)) or [], key=lambda e: e.name.lower()):
+    for entry in sorted(listing, key=lambda e: e.name.lower()):
         try:
             if is_link(entry):
                 skipped["ссылки"] += 1
@@ -167,7 +174,7 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
             skipped["скрытые и системные"] += 1
             continue
         if is_dir:
-            if entry.name.lower() in reserved or not rules.get("sort.move_folders", True):
+            if entry.name.lower() in reserved or not move_folders:
                 continue
             progress(f"Смотрю папку {entry.name}…")
             move = _plan_folder(Path(entry.path), folder, sectors, type_targets, now, min_age, taken, ask_ai)

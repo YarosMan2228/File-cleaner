@@ -31,8 +31,11 @@ class FakeOllama(BaseHTTPRequestHandler):
         request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         FakeOllama.calls.append(request)
         content = request["prompt"].split("Beginning of the content:", 1)[1]
-        folder = "Работа" if "BACnet" in content else ""
-        self._reply({"response": json.dumps({"folder": folder, "why": "про автоматизацию зданий"})})
+        if "BACnet" in content:
+            answer = {"folder": "Работа", "confidence": 30 if "unsure" in content else 90, "why": "автоматизация зданий"}
+        else:
+            answer = {"folder": "", "confidence": 80, "why": "ни к чему не относится"}
+        self._reply({"response": json.dumps(answer)})
 
 
 @pytest.fixture
@@ -91,4 +94,21 @@ def test_failed_answer_is_not_cached(sandbox, rules):
     rules.data["ai"].update(enabled=True, url="http://127.0.0.1:9")
     ai = LocalAI(rules)
     sector, _ = ai.classify("x.pdf", rules.sectors, [], "", "key")
-    assert sector is None and "key" not in ai._cache
+    assert sector is None and not ai._cache
+
+
+def test_low_confidence_is_ignored(sandbox, rules, ollama):
+    rules.data["ai"].update(enabled=True, url=ollama)
+    write(sandbox / "Downloads" / "maybe.txt", "BACnet unsure")
+    plan = organizer.plan_sort(sandbox / "Downloads", rules, check_references=False)
+    [move] = plan.moves
+    assert move.label == "Документы"                            # уверенность 30 < 60 — сектор не ставим
+
+
+def test_folder_answer_with_description_is_understood():
+    from filecleaner.ai import _match_folder
+
+    names = ["Учёба", "Работа"]
+    assert _match_folder("Учёба: учёба в университете (RTU)", names) == "Учёба"
+    assert _match_folder("- работа", names) == "Работа"
+    assert _match_folder("", names) is None and _match_folder("Отдых", names) is None

@@ -71,6 +71,34 @@ def disk_size(path: Path | str) -> int:
     return (high.value << 32) + low
 
 
+# ------------------------------------------------------------------ питание
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
+
+
+def keep_awake(on: bool) -> None:
+    """Не даёт Windows уснуть, пока идёт работа (экран может гаснуть)."""
+    if IS_WINDOWS:
+        ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS | (_ES_SYSTEM_REQUIRED if on else 0))
+
+
+def go_to_sleep() -> bool:
+    """Спящий режим (если в Windows включена гибернация — может уйти в неё)."""
+    if not IS_WINDOWS:
+        return False
+    return bool(ctypes.windll.powrprof.SetSuspendState(False, False, False))
+
+
+def shut_down() -> bool:
+    if not IS_WINDOWS:
+        return False
+    try:
+        subprocess.run(["shutdown", "/s", "/t", "0"], check=True, timeout=30, creationflags=NO_WINDOW)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def create_junction(link: Path, target: Path) -> None:
     """Точка соединения: старая папка «ведёт» в новую, программы ничего не замечают."""
     import _winapi

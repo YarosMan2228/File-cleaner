@@ -79,6 +79,16 @@ def is_protected_listing(names: set[str]) -> bool:
     return any(name.endswith(config.PROTECTED_SUFFIXES) for name in names)
 
 
+def looks_like_program_folder(names: set[str]) -> bool:
+    """Установленная программа или репозиторий: раскладывать такую папку нельзя — программа сломается.
+
+    Строже, чем is_protected_listing: одна скачанная .dll или requirements.txt в Загрузках — ещё не программа.
+    """
+    if names & {".git", ".hg", ".svn", "pyvenv.cfg"}:
+        return True
+    return sum(name.endswith((".dll", ".sys")) for name in names) >= 5
+
+
 def skip_dir(entry: os.DirEntry) -> bool:
     name = entry.name.lower()
     if name.startswith(".") or name in config.SKIP_DIR_NAMES:
@@ -90,10 +100,17 @@ def skip_dir(entry: os.DirEntry) -> bool:
     return is_hidden_system(st)
 
 
+def is_drive_root(path: Path | str) -> bool:
+    path = Path(path)
+    return path.parent == path
+
+
 def walk(root: Path, *, rules: bool = True) -> Iterator[tuple[os.DirEntry, bool]]:
     """Файлы под root и признак «лежит внутри программы или проекта».
 
     rules=False — без исключений (для папок кэша); по ссылкам не ходим в любом случае.
+    Программа, установленная прямо в корень диска (B:\\Resolve.exe и .dll рядом), защищает только
+    файлы в корне — папки на диске проверяются каждая сама по себе.
     """
     stack: list[tuple[str, bool, bool]] = [(str(root), True, False)]
     while stack:
@@ -101,8 +118,12 @@ def walk(root: Path, *, rules: bool = True) -> Iterator[tuple[os.DirEntry, bool]
         entries = list_dir(path)
         if entries is None:
             continue
-        if rules and not protected and not is_root:
-            protected = is_protected_listing({e.name.lower() for e in entries})
+        files_protected = protected
+        if rules and not protected:
+            if not is_root:
+                protected = files_protected = is_protected_listing({e.name.lower() for e in entries})
+            elif is_drive_root(path):
+                files_protected = is_protected_listing({e.name.lower() for e in entries})
         for entry in entries:
             try:
                 if is_link(entry):
@@ -111,7 +132,7 @@ def walk(root: Path, *, rules: bool = True) -> Iterator[tuple[os.DirEntry, bool]
                     if not rules or not skip_dir(entry):
                         stack.append((entry.path, False, protected))
                 elif entry.is_file(follow_symlinks=False):
-                    yield entry, protected
+                    yield entry, files_protected
             except OSError:
                 continue
 

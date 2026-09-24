@@ -119,6 +119,9 @@ class Rules:
                     f"В правилах {key} = \"delete\": твои файлы без проверки не удаляются — "
                     f"поставь \"review\" (перенос в «{config.REVIEW_DIR_NAME}»)."
                 )
+        after = self.get("night.after", "nothing")
+        if after not in ("nothing", "sleep", "shutdown"):
+            raise RulesError(f"В правилах night.after = {after!r}: можно только nothing, sleep, shutdown.")
         for key in ("duplicates.min_size", "duplicates.min_folder_size", "old_files.min_size"):
             try:
                 self.size(key)

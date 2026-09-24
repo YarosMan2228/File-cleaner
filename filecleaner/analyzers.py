@@ -224,13 +224,26 @@ def looks_like_copy(stem: str) -> bool:
     return bool(_COPY_SUFFIX.search(stem) or _COPY_PREFIX.search(stem))
 
 
+def dump_folders(roots: dict[str, Path], rules: Rules) -> list[Path]:
+    """Папки из [scan] dump_folders: имена (downloads, desktop) или пути ("B:/downloads")."""
+    folders = None
+    result: list[Path] = []
+    for item in rules.get("scan.dump_folders", ["downloads", "desktop"]) or []:
+        path = roots.get(item)
+        if path is None and item in config.FOLDER_TITLES:
+            folders = folders if folders is not None else config.user_folders()
+            path = folders.get(item)
+        elif path is None:
+            path = Path(item).expanduser()
+        if path is not None and path.is_dir():
+            result.append(path)
+    return result
+
+
 def dump_dirs(roots: dict[str, Path], rules: Rules) -> set[str]:
     """Папки-«свалки», куда всё падает само: Загрузки, Рабочий стол, Telegram Desktop, Temp."""
     dirs = {key_of(config.TEMP)}
-    for name in ("downloads", "desktop"):
-        root = roots.get(name)
-        if root is None:
-            continue
+    for root in dump_folders(roots, rules):
         dirs.add(key_of(root))
         for keep in rules.get("sort.keep_folders", []) or []:
             dirs.add(key_of(root / keep))
