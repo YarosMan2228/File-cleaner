@@ -55,6 +55,49 @@ def write_version_info() -> Path:
     return path
 
 
+def signing_env() -> dict[str, str] | None:
+    """Сертификат для подписи из окружения — или None (тогда файлы не подписываются).
+
+    FILECLEANER_SIGN_PFX (+ FILECLEANER_SIGN_PASSWORD) — файл сертификата;
+    FILECLEANER_SIGN_THUMBPRINT — отпечаток сертификата в хранилище «Личное» (CurrentUser\\My);
+    FILECLEANER_SIGN_TIMESTAMP — сервер меток времени (по умолчанию DigiCert; пусто — без метки).
+    Пароль передаётся через окружение, а не в командной строке.
+    """
+    pfx, thumb = os.environ.get("FILECLEANER_SIGN_PFX", ""), os.environ.get("FILECLEANER_SIGN_THUMBPRINT", "")
+    if not pfx and not thumb:
+        return None
+    return {**os.environ, "FC_PFX": pfx, "FC_PASSWORD": os.environ.get("FILECLEANER_SIGN_PASSWORD", ""),
+            "FC_THUMB": thumb, "FC_TIMESTAMP": os.environ.get("FILECLEANER_SIGN_TIMESTAMP", "http://timestamp.digicert.com")}
+
+
+SIGN_CMD = f'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{PACK / "sign.ps1"}"'
+
+
+def sign(files: list[Path], env: dict[str, str]) -> None:
+    subprocess.run(f"{SIGN_CMD} " + " ".join(f'"{f}"' for f in files), check=True, env=env)
+
+
+def third_party_notices() -> str:
+    """Лицензии того, что входит в сборку, — из самих файлов лицензий установленных пакетов."""
+    import importlib.metadata as md
+
+    sections = [("Python", "https://www.python.org/", Path(sys.base_prefix) / "LICENSE.txt")]
+    for dist_name, title, url in (("pypdf", "pypdf", "https://github.com/py-pdf/pypdf"),
+                                  ("pyinstaller", "PyInstaller bootloader", "https://pyinstaller.org/")):
+        try:
+            dist = md.distribution(dist_name)
+        except md.PackageNotFoundError:
+            continue
+        files = [f for f in dist.files or [] if Path(str(f)).name.upper().startswith(("LICENSE", "COPYING"))]
+        if files:
+            sections.append((f"{title} {dist.version}", url, Path(dist.locate_file(files[0]))))
+    parts = ["File Cleaner includes the following third-party software. Their licenses follow.\n"]
+    for title, url, path in sections:
+        if path.exists():
+            parts.append(f"\n{'=' * 78}\n{title} — {url}\n{'=' * 78}\n\n{path.read_text(encoding='utf-8', errors='replace')}")
+    return "".join(parts)
+
+
 def find_iscc() -> Path | None:
     candidates = [
         Path(os.environ.get("ProgramFiles(x86)", "")) / "Inno Setup 6" / "ISCC.exe",
@@ -76,9 +119,15 @@ def main() -> int:
                     "--distpath", str(DIST), "--workpath", str(BUILD), str(PACK / "filecleaner.spec")],
                    check=True, cwd=ROOT)
     app_dir = DIST / "FileCleaner"
-    for name in ("LICENSE.txt", "THIRD-PARTY-NOTICES.txt"):
-        if (ROOT / name).exists():
-            shutil.copyfile(ROOT / name, app_dir / name)
+    if (ROOT / "LICENSE.txt").exists():
+        shutil.copyfile(ROOT / "LICENSE.txt", app_dir / "LICENSE.txt")
+    (app_dir / "THIRD-PARTY-NOTICES.txt").write_text(third_party_notices(), encoding="utf-8")
+
+    env = signing_env()
+    if env is None:
+        print("Подпись: сертификат не задан — файлы не подписаны (как подписать — docs/SIGNING.md).")
+    else:
+        sign([app_dir / "File Cleaner.exe", app_dir / "filecleaner.exe"], env)
 
     portable = DIST / f"FileCleaner-{__version__}-portable"
     shutil.make_archive(str(portable), "zip", DIST, "FileCleaner")
@@ -89,8 +138,10 @@ def main() -> int:
     if iscc is None:
         print("Inno Setup 6 не найден — установщик не собран (https://jrsoftware.org/isdl.php).")
         return 0
-    subprocess.run([str(iscc), "/Q", f"/DAppVersion={__version__}", f"/DPublisher={PUBLISHER}",
-                    f"/O{DIST}", str(PACK / "installer.iss")], check=True, cwd=ROOT)
+    args = [str(iscc), "/Q", f"/DAppVersion={__version__}", f"/DPublisher={PUBLISHER}", f"/O{DIST}"]
+    if env is not None:  # Inno Setup подпишет и установщик, и деинсталлятор тем же скриптом
+        args += ["/DSIGN", "/Sfcsign=powershell.exe $p"]  # параметры (путь к sign.ps1) — в installer.iss
+    subprocess.run([*args, str(PACK / "installer.iss")], check=True, cwd=ROOT, env=env)
     print(f"Установщик: {DIST / f'FileCleaner-{__version__}-setup.exe'}")
     return 0
 

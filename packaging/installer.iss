@@ -31,6 +31,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 #if FileExists("..\LICENSE.txt")
 LicenseFile=..\LICENSE.txt
 #endif
+#ifdef SIGN
+; build.py передаёт /Sfcsign=... — подписываются и установщик, и деинсталлятор
+SignTool=fcsign -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $q{#SourcePath}sign.ps1$q $f
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"

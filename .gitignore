@@ -7,3 +7,5 @@ venv/
 build/
 dist/
 packaging/version_info.txt
+*.pfx
+*.p12

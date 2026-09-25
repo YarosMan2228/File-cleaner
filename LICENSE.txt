@@ -1,0 +1,85 @@
+FILE CLEANER — END USER LICENSE AGREEMENT
+Copyright (c) 2026 Yaroslav. All rights reserved.
+
+By installing or using File Cleaner ("the Software") you agree to this agreement.
+If you do not agree, do not install or use the Software.
+
+1. LICENSE. You receive a non-exclusive, non-transferable license to install and use the
+   Software on computers you own or control, for personal use or for the internal needs of
+   your organisation.
+
+2. RESTRICTIONS. You may not sell, rent, sublicense, distribute or publish the Software or any
+   part of it, remove copyright notices, or reverse engineer, decompile or disassemble it, except
+   where applicable law expressly allows this despite this restriction.
+
+3. YOUR FILES AND PRIVACY. The Software runs on your computer. It does not send your files,
+   file names or file contents over the internet. The optional AI feature works only with a
+   model running on your own computer (Ollama); the Software refuses to use a model located on
+   another computer. The Software opens the Ollama website only when you press the button that
+   says so.
+
+4. DELETING AND MOVING FILES. The Software deletes and moves files. Without asking, it deletes
+   only caches, temporary files and copies that it has compared byte by byte with an original
+   that stays in place. Everything else is set aside for your decision. Moves can be undone in
+   History; deleted files cannot be restored. Review what the Software proposes before you
+   confirm it, and keep backups of important data.
+
+5. NO WARRANTY. The Software is provided "as is", without warranty of any kind, express or
+   implied, including warranties of merchantability, fitness for a particular purpose and
+   non-infringement.
+
+6. LIMITATION OF LIABILITY. To the maximum extent permitted by applicable law, the author is not
+   liable for any damages arising from the use of or inability to use the Software, including
+   loss of data, loss of profits or business interruption.
+
+7. THIRD-PARTY SOFTWARE. The Software includes components of other authors that are distributed
+   under their own licenses; see THIRD-PARTY-NOTICES.txt.
+
+8. TERMINATION. This license ends automatically if you breach it. You must then stop using the
+   Software and remove it.
+
+Nothing in this agreement limits rights that consumer protection law gives you and that cannot
+be waived.
+
+--------------------------------------------------------------------------------------------------
+
+FILE CLEANER — ЛИЦЕНЗИОННОЕ СОГЛАШЕНИЕ С ПОЛЬЗОВАТЕЛЕМ
+© 2026 Yaroslav. Все права защищены.
+
+Устанавливая или используя File Cleaner («Программа»), ты принимаешь это соглашение.
+Если не согласен — не устанавливай и не используй Программу.
+
+1. ЛИЦЕНЗИЯ. Ты получаешь неисключительное право без права передачи устанавливать и
+   использовать Программу на компьютерах, которыми владеешь или распоряжаешься, — для
+   личных целей или внутренних нужд своей организации.
+
+2. ОГРАНИЧЕНИЯ. Нельзя продавать, сдавать в аренду, сублицензировать, распространять или
+   публиковать Программу или её части, удалять уведомления об авторских правах, а также
+   декомпилировать и дизассемблировать её — кроме случаев, когда закон прямо это разрешает.
+
+3. ТВОИ ФАЙЛЫ И ПРИВАТНОСТЬ. Программа работает на твоём компьютере. Она не отправляет в
+   интернет ни файлы, ни их имена, ни их содержимое. ИИ (по желанию) работает только с моделью
+   на твоём компьютере (Ollama); модель на другом компьютере Программа использовать откажется.
+   Сайт Ollama открывается, только когда ты нажимаешь кнопку с этим названием.
+
+4. УДАЛЕНИЕ И ПЕРЕНОС ФАЙЛОВ. Программа удаляет и переносит файлы. Без вопросов она удаляет
+   только кэши, временные файлы и копии, сверенные байт в байт с оригиналом, который остаётся
+   на месте. Всё остальное откладывается на твоё решение. Перенос можно отменить в «Истории»;
+   удалённое восстановить нельзя. Проверяй, что предлагает Программа, прежде чем подтверждать,
+   и держи резервные копии важных данных.
+
+5. БЕЗ ГАРАНТИЙ. Программа предоставляется «как есть», без каких-либо гарантий, явных или
+   подразумеваемых, в том числе гарантий пригодности для определённой цели.
+
+6. ОГРАНИЧЕНИЕ ОТВЕТСТВЕННОСТИ. В максимальной степени, допустимой законом, автор не отвечает
+   за ущерб от использования Программы или невозможности её использовать, включая потерю
+   данных, упущенную выгоду и перерывы в работе.
+
+7. СТОРОННИЕ КОМПОНЕНТЫ. В Программу входят компоненты других авторов, которые
+   распространяются по своим лицензиям, — см. THIRD-PARTY-NOTICES.txt.
+
+8. ПРЕКРАЩЕНИЕ. Лицензия прекращается автоматически при нарушении соглашения. Тогда нужно
+   перестать пользоваться Программой и удалить её.
+
+Соглашение не ограничивает права, которые даёт закон о защите прав потребителей и от которых
+нельзя отказаться.
