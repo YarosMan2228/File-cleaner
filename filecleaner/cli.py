@@ -390,7 +390,11 @@ def cmd_sort(args, rules: Rules, interactive: bool = False) -> int:
 
     progress = Progress()
     print(bold(f"Сортировка: {display(folder)}"))
-    plan = organizer.plan_sort(folder, rules, progress)
+    ai = LocalAI(rules)
+    if ai.enabled and rules.sectors and not ai.available():
+        print(yellow(f"ИИ включён, но модель {ai.model} недоступна — запущен ли Ollama? "
+                     "Раскладываю только по правилам."))
+    plan = organizer.plan_sort(folder, rules, progress, ai=ai)
     progress.clear()
     if not plan.moves:
         print(green("Всё уже разложено — переносить нечего."))

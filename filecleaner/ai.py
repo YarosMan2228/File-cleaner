@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -27,7 +28,8 @@ OFFICE_PARTS = {
 }
 SNIPPET = 1200
 MAX_PDF = 200 * 1024 * 1024
-PROMPT_VERSION = 4  # меняется вместе с текстом запроса — старые ответы из кэша не используются
+PROMPT_VERSION = 6  # меняется вместе с текстом запроса — старые ответы из кэша не используются
+SAVE_EVERY = 20  # ответов модели между записями кэша на диск
 
 
 def readable_name(name: str) -> str:
@@ -85,7 +87,7 @@ class LocalAI:
         self.enabled = bool(rules.get("ai.enabled", False))
         self.url = str(rules.get("ai.url", "http://localhost:11434")).rstrip("/")
         self.model = str(rules.get("ai.model", "qwen2.5:7b"))
-        self.min_confidence = int(rules.get("ai.min_confidence", 70))
+        self.min_confidence = int(rules.get("ai.min_confidence", 80))
         self.about = str(rules.get("ai.about", "") or "").strip()
         self._available: bool | None = None
         self._cache_path = config.DATA_DIR / "ai_cache.json"
@@ -93,6 +95,7 @@ class LocalAI:
             self._cache: dict[str, dict] = json.loads(self._cache_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             self._cache = {}
+        self._unsaved = 0
 
     def available(self) -> bool:
         if not self.enabled:
@@ -125,7 +128,11 @@ class LocalAI:
     def save(self) -> None:
         if self._cache:
             self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-            self._cache_path.write_text(json.dumps(self._cache, ensure_ascii=False), encoding="utf-8")
+            # Через временный файл: если процесс убьют посреди записи, старый кэш останется целым.
+            tmp = self._cache_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._cache, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, self._cache_path)
+        self._unsaved = 0
 
     def classify(self, name: str, sectors: list[dict], sources: list[str], snippet: str,
                  cache_key: str, kind: str | None = None) -> tuple[str | None, str]:
@@ -135,7 +142,9 @@ class LocalAI:
         names = [s["name"] for s in sectors]
         if not names:
             return None, ""
-        key = f"{cache_key}|v{PROMPT_VERSION}|{','.join(names)}"
+        # В ключе — отпечаток описаний: поправил about или описание сектора — модель спросят заново.
+        context = self.about + "\n" + "\n".join(_describe(s) for s in sectors)
+        key = f"{cache_key}|v{PROMPT_VERSION}|{hashlib.sha1(context.encode('utf-8')).hexdigest()[:10]}"
         cached = self._cache.get(key)
         if cached is None:
             prompt = (
@@ -158,6 +167,9 @@ class LocalAI:
             if "folder" not in cached:
                 return None, ""  # модель не ответила — не запоминаем, спросим в следующий раз
             self._cache[key] = cached
+            self._unsaved += 1
+            if self._unsaved >= SAVE_EVERY:
+                self.save()  # прерванный прогон не теряет уже полученные ответы
         folder = _match_folder(str(cached.get("folder", "")), names)
         try:
             confidence = int(float(cached.get("confidence", 0)))

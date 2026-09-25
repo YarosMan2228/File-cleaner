@@ -102,7 +102,7 @@ def test_low_confidence_is_ignored(sandbox, rules, ollama):
     write(sandbox / "Downloads" / "maybe.txt", "BACnet unsure")
     plan = organizer.plan_sort(sandbox / "Downloads", rules, check_references=False)
     [move] = plan.moves
-    assert move.label == "Документы"                            # уверенность 30 < 70 — сектор не ставим
+    assert move.label == "Документы"                            # уверенность 30 < 80 — сектор не ставим
 
 
 def test_folder_answer_with_description_is_understood():
@@ -112,3 +112,44 @@ def test_folder_answer_with_description_is_understood():
     assert _match_folder("Учёба: учёба в университете (RTU)", names) == "Учёба"
     assert _match_folder("- работа", names) == "Работа"
     assert _match_folder("", names) is None and _match_folder("Отдых", names) is None
+
+
+def test_sort_warns_when_ai_is_unreachable(sandbox, rules, capsys, monkeypatch):
+    from argparse import Namespace
+
+    from filecleaner import cli, refs
+
+    monkeypatch.setattr(refs, "scan_references", lambda *a, **k: {})  # не обходить настоящую систему
+    rules.data["ai"].update(enabled=True, url="http://127.0.0.1:9")
+    write(sandbox / "Downloads" / "a.txt", "x")
+    cli.cmd_sort(Namespace(folder=str(sandbox / "Downloads"), apply=False, yes=False), rules)
+    assert "недоступна" in capsys.readouterr().out
+
+
+def test_answers_are_saved_during_a_long_run(sandbox, rules, monkeypatch):
+    from filecleaner import ai as ai_module, config
+
+    monkeypatch.setattr(ai_module, "SAVE_EVERY", 2)
+    rules.data["ai"].update(enabled=True)
+    ai = LocalAI(rules)
+    ai._ask = lambda prompt: {"folder": "", "confidence": 10, "why": ""}
+    ai.classify("a.txt", rules.sectors, [], "x", "a")
+    assert not (config.DATA_DIR / "ai_cache.json").exists()
+    ai.classify("b.txt", rules.sectors, [], "x", "b")      # второй ответ — пора записать, не дожидаясь конца
+    assert len(json.loads((config.DATA_DIR / "ai_cache.json").read_text(encoding="utf-8"))) == 2
+
+
+def test_edited_description_asks_the_model_again(sandbox, rules):
+    rules.data["ai"].update(enabled=True)
+    ai = LocalAI(rules)
+    prompts = []
+    ai._ask = lambda prompt: prompts.append(prompt) or {"folder": "", "confidence": 10, "why": ""}
+    ai.classify("a.txt", rules.sectors, [], "x", "a")
+    ai.classify("a.txt", rules.sectors, [], "x", "a")
+    assert len(prompts) == 1                                   # тот же вопрос — ответ из кэша
+    sectors = [dict(s, description="учёба в RTU, IT") if s["name"] == "Учёба" else s for s in rules.sectors]
+    ai.classify("a.txt", sectors, [], "x", "a")
+    assert len(prompts) == 2 and "учёба в RTU, IT" in prompts[1]
+    ai.about = "студент"
+    ai.classify("a.txt", sectors, [], "x", "a")
+    assert len(prompts) == 3
