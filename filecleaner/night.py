@@ -329,6 +329,9 @@ def _run(rules: Rules, out: NightResult, log: Log, progress: Log) -> None:
         out.batches = applied.batches
         out.waiting, out.waiting_bytes = applied.staged, applied.staged_bytes
         out.errors += applied.errors
+        if applied.busy:
+            out.notes.append(f"{applied.busy} временных файлов и кэшей заняты программами "
+                             f"или требуют прав администратора — пропущены.")
         log(f"   кэши: {applied.deleted} ({human_size(applied.freed)}); до утра: {applied.staged} "
             f"({human_size(applied.staged_bytes)})")
 

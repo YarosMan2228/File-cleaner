@@ -26,6 +26,7 @@ class ApplyResult:
     staged_bytes: int = 0
     batches: list[review.Batch] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    busy: int = 0  # кэши и временные файлы, занятые программой или без прав администратора — пропущены
 
 
 def apply_check(result: CheckResult, session: Session, skip_groups: set[str] | None = None,
@@ -50,6 +51,9 @@ def apply_check(result: CheckResult, session: Session, skip_groups: set[str] | N
             out.deleted += 1
             out.freed += finding.size
         except OSError as exc:
+            if finding.rule.startswith("junk.") and isinstance(exc, PermissionError):
+                out.busy += 1  # C:\Windows\Temp без прав, кэш открытой программы — не беда, это не твои файлы
+                continue
             if len(out.errors) < 50:
                 out.errors.append(f"{display(finding.path)}: {exc.strerror or exc}")
     # Папки Temp, которые опустели после удаления файлов.

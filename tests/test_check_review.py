@@ -144,3 +144,21 @@ def test_keep_keywords_protect_from_deletion_too(sandbox, rules):
     result = check(sandbox, rules)
     [finding] = [f for f in result.findings if f.path.parent.name == "Downloads"]
     assert finding.mode == "report" and "pw2" in finding.reason
+
+
+def test_busy_temp_files_are_counted_not_errors(sandbox, rules, monkeypatch):
+    from filecleaner.analyzers import CheckResult, Finding
+
+    temp = write(sandbox / "Temp" / "locked.tmp", b"x" * 10)
+    copy = write(sandbox / "Downloads" / "copy.pdf", b"y" * 10)
+    findings = [Finding("junk.temp", "Временные файлы", temp, 10, "delete", "временный файл"),
+                Finding("duplicates.same_folder", "Копии", copy, 10, "delete", "копия")]
+
+    def deny(self, path, *args, **kwargs):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(journal.Session, "delete", deny)
+    with journal.Session("check", "Проверка") as session:
+        out = pipeline.apply_check(CheckResult(findings, [], []), session)
+    assert out.busy == 1 and temp.exists()                      # занятый кэш — не ошибка, просто пропущен
+    assert len(out.errors) == 1 and "copy.pdf" in out.errors[0]  # а сбой с твоим файлом — ошибка

@@ -286,6 +286,8 @@ def cmd_check(args, rules: Rules, interactive: bool = False) -> int:
         print(yellow(f"  ! {error}"))
     if len(out.errors) > 10:
         print(yellow(f"  …и ещё {len(out.errors) - 10} ошибок (обычно — файл открыт в программе)."))
+    if out.busy:
+        print(dim(f"Пропущено {files(out.busy)} кэшей и временных: заняты программами или нужны права администратора."))
     print(dim("Передумал? «filecleaner undo» вернёт перенесённое на места."))
     return 0
 
