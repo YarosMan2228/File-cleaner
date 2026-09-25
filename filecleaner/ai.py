@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from . import config
 from .fsutil import long_path
@@ -30,6 +30,19 @@ SNIPPET = 1200
 MAX_PDF = 200 * 1024 * 1024
 PROMPT_VERSION = 6  # меняется вместе с текстом запроса — старые ответы из кэша не используются
 SAVE_EVERY = 20  # ответов модели между записями кэша на диск
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# Без системного прокси: запросы к модели не уходят с компьютера, даже если в Windows настроен прокси.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def is_local_url(url: str) -> bool:
+    """Адрес модели на этом компьютере — иначе ИИ не используется: имена и текст файлов не уходят в сеть."""
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and (host in LOCAL_HOSTS or host.startswith("127."))
 
 
 def readable_name(name: str) -> str:
@@ -97,12 +110,16 @@ class LocalAI:
             self._cache = {}
         self._unsaved = 0
 
+    @property
+    def local(self) -> bool:
+        return is_local_url(self.url)
+
     def available(self) -> bool:
-        if not self.enabled:
+        if not self.enabled or not self.local:
             return False
         if self._available is None:
             try:
-                with urllib.request.urlopen(self.url + "/api/tags", timeout=3) as resp:
+                with _OPENER.open(self.url + "/api/tags", timeout=3) as resp:
                     models = [m.get("name", "") for m in json.loads(resp.read()).get("models", [])]
                 self._available = any(m == self.model or m.split(":")[0] == self.model for m in models)
             except (OSError, ValueError, urllib.error.URLError):
@@ -110,6 +127,8 @@ class LocalAI:
         return self._available
 
     def _ask(self, prompt: str) -> dict:
+        if not self.local:
+            return {}
         body = json.dumps({
             "model": self.model, "prompt": prompt, "stream": False, "format": "json",
             # Короткий контекст — модель целиком помещается в видеокарту на 6 ГБ и отвечает быстрее.
@@ -118,7 +137,7 @@ class LocalAI:
         request = urllib.request.Request(self.url + "/api/generate", data=body,
                                          headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(request, timeout=180) as resp:
+            with _OPENER.open(request, timeout=180) as resp:
                 data = json.loads(resp.read())
             answer = json.loads(data.get("response") or "{}")
             return answer if isinstance(answer, dict) else {}

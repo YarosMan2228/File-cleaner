@@ -8,7 +8,7 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from . import __version__, analyzers, compress, config, journal, organizer, pipeline, report, review
+from . import __version__, analyzers, compress, config, fsutil, journal, night, organizer, pipeline, report, review
 from .ai import LocalAI
 from .fsutil import display, human_size, plural
 from .index import Index
@@ -590,25 +590,109 @@ def cmd_rules(args, rules: Rules, interactive: bool = False) -> int:
     return 0
 
 
+# ======================================================================= приступай
+def _night_describe(rules: Rules) -> None:
+    roots = night.night_roots(rules)
+    dumps = analyzers.dump_folders(roots, rules)
+    drives = [str(p) for name, p in roots.items() if fsutil.is_drive_root(p)]
+    print(bold("Приступай — всё за один запуск, можно оставить на ночь:"))
+    print(f"  1. Мусор и копии ищу {'на дисках ' + ', '.join(drives) if drives else 'в личных папках'} "
+          f"(Windows, программы, игры и проекты не трогаю; на системном диске вне твоей папки — только отчёт).")
+    print("  2. Кэши и временные файлы удаляю сразу.")
+    if rules.get("night.auto_delete", True):
+        print(f"  3. Точные копии и распакованные zip в свалках ({', '.join(display(d) for d in dumps)}) "
+              "удаляю сразу — после сверки с оригиналом.")
+    print(f"  4. Остальное — в «{config.REVIEW_DIR_NAME}», утром решаешь сам.")
+    folders = night.sort_folders(roots, rules, dumps)
+    print("  5. Раскладываю: " + ", ".join(display(p) + ("" if subs else " (только файлы)") for p, subs in folders))
+    ai = LocalAI(rules)
+    if ai.enabled:
+        status = ("локальная модель " + ai.model) if ai.local else "ВЫКЛЮЧЕН: адрес модели не на этом компьютере"
+        print(dim(f"     ИИ: {status}. Всё считается на этом компьютере, в интернет ничего не уходит."))
+    after = {"nothing": "ничего не делаю", "sleep": "усыпляю компьютер", "shutdown": "выключаю компьютер"}
+    print(f"  6. Потом {after[rules.get('night.after', 'nothing')]} (night.after в правилах).")
+
+
+def _night_log(progress: Progress):
+    path = config.DATA_DIR / "logs" / f"night-{time.strftime('%Y%m%d-%H%M')}.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def log(text: str) -> None:
+        progress.clear()
+        print(text, flush=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+
+    return log, path
+
+
+def cmd_night(args, rules: Rules, interactive: bool = False) -> int:
+    if getattr(args, "after", None):
+        rules.data.setdefault("night", {})["after"] = args.after
+    _night_describe(rules)
+    if not interactive and not args.apply:
+        progress = Progress()
+        print(bold("\nПросмотр: ищу, ничего не трогаю…"))
+        plan = night.plan_night(rules, progress)
+        progress.clear()
+        junk = plan.check.by_mode("delete")
+        print(f"  Кэши и временное: {human_size(sum(f.size for f in junk))}")
+        print(f"  Удалю сразу (после сверки): {objects(len(plan.auto))}, {human_size(sum(f.size for f in plan.auto))}")
+        for f in sorted(plan.auto, key=lambda f: -f.size)[:8]:
+            print(dim(f"      {display(f.path)} — {f.reason}"))
+        waiting = plan.morning + [f for f, _ in plan.held]
+        print(f"  До утра в «{config.REVIEW_DIR_NAME}»: {objects(len(waiting))}, {human_size(sum(f.size for f in waiting))}")
+        print(f"  Только в отчёт: {human_size(sum(f.size for f in plan.check.by_mode('report')))}")
+        print(cyan("Это был просмотр. Выполнить: filecleaner night --apply"))
+        return 0
+    if not getattr(args, "yes", False) and not confirm("\nПриступить? Дальше можно уйти — всё сделается само"):
+        print("Отменено, ничего не тронуто.")
+        return 0
+
+    progress = Progress()
+    log, log_path = _night_log(progress)
+    out = night.run_night(rules, log, progress)
+    progress.clear()
+    moved = sum(r.moved for _, _, r in out.sorted)
+    print(green(f"\nГотово: освобождено {human_size(out.junk_freed + out.auto_freed)} "
+                f"(кэши {human_size(out.junk_freed)}, проверенные копии {human_size(out.auto_freed)}), "
+                f"разложено {objects(moved)}."))
+    if out.waiting:
+        print(yellow(f"Ждёт утра: {objects(out.waiting)}, {human_size(out.waiting_bytes)} — "
+                     f"«{config.REVIEW_DIR_NAME}», потом «Утвердить удаление»."))
+    for note in out.notes[:10]:
+        print(dim(f"  {note}"))
+    for error in out.errors[:10]:
+        print(yellow(f"  ! {error}"))
+    print(dim(f"Отчёт: {out.report}\nЖурнал: {log_path}"))
+    night.after(rules.get("night.after", "nothing"), log)
+    return 0
+
+
 # ======================================================================= меню
 MENU = [
-    ("1", "Скан: что занимает место", cmd_scan),
-    ("2", "Проверка: мусор, дубли и лишнее → «Ready for approval»", cmd_check),
-    ("3", "Сортировка: разложить файлы по папкам", cmd_sort),
-    ("4", "Утвердить удаление (папка «Ready for approval»)", cmd_approve),
-    ("5", "Сжатие: освободить место без удаления", cmd_compress),
-    ("6", "История", cmd_history),
-    ("7", "Отменить действие", cmd_undo),
-    ("8", "Правила: что считать ненужным", cmd_rules),
+    ("1", "Приступай: чистка всех дисков и сортировка за один раз (можно на ночь)", cmd_night),
+    ("2", "Скан: что занимает место", cmd_scan),
+    ("3", "Проверка: мусор, дубли и лишнее → «Ready for approval»", cmd_check),
+    ("4", "Сортировка: разложить файлы по папкам", cmd_sort),
+    ("5", "Утвердить удаление (папка «Ready for approval»)", cmd_approve),
+    ("6", "Сжатие: освободить место без удаления", cmd_compress),
+    ("7", "История", cmd_history),
+    ("8", "Отменить действие", cmd_undo),
+    ("9", "Правила: что считать ненужным", cmd_rules),
 ]
 
 
 def menu() -> int:
     print(bold(f"File Cleaner {__version__}") + dim(" — порядок на диске, удаление только с твоего подтверждения"))
+    last = night.last_run()
+    if last:
+        print(dim(f"Последний «Приступай»: {last['finished'].replace('T', ' ')} — освобождено "
+                  f"{human_size(last['freed'])}, разложено {last['sorted']}. Отчёт: {last['report']}"))
     waiting = review.find_batches()
     if waiting:
         size = sum(b.size() for b in waiting)
-        print(yellow(f"В «{config.REVIEW_DIR_NAME}» ждёт решения {human_size(size)} — пункт 4."))
+        print(yellow(f"В «{config.REVIEW_DIR_NAME}» ждёт решения {human_size(size)} — пункт 5."))
     while True:
         print()
         for key, title, _ in MENU:
@@ -648,6 +732,11 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=func)
         return p
 
+    p = add("night", cmd_night, "приступай: чистка всех дисков и сортировка за один раз — можно на ночь "
+                                "(без --apply только показать)")
+    p.add_argument("--apply", action="store_true", help="выполнить, а не только показать")
+    p.add_argument("--yes", action="store_true", help="не спрашивать подтверждение")
+    p.add_argument("--after", choices=night.AFTER, help="что сделать в конце (по умолчанию — night.after в правилах)")
     add("scan", cmd_scan, "что занимает место")
     p = add("check", cmd_check, "найти мусор, дубли и лишнее (с --apply: кэши удалить, остальное — на проверку)")
     p.add_argument("--apply", action="store_true", help="выполнить, а не только показать")
