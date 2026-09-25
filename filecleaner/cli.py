@@ -628,6 +628,13 @@ def _night_log(progress: Progress):
     return log, path
 
 
+def cmd_gui(args, rules: Rules, interactive: bool = False) -> int:
+    from .gui.app import run  # окно подгружается, только когда его открывают
+
+    path = Path(args.rules) if getattr(args, "rules", None) else None
+    return run(lambda: Rules.load(path), port=args.port, show_window=not args.no_window)
+
+
 def cmd_night(args, rules: Rules, interactive: bool = False) -> int:
     if getattr(args, "after", None):
         rules.data.setdefault("night", {})["after"] = args.after
@@ -734,6 +741,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=func)
         return p
 
+    p = add("gui", cmd_gui, "окно программы: всё кнопками")
+    p.add_argument("--no-window", action="store_true", help="не открывать окно — только напечатать адрес")
+    p.add_argument("--port", type=int, default=0, help="порт (по умолчанию — любой свободный)")
     p = add("night", cmd_night, "приступай: чистка всех дисков и сортировка за один раз — можно на ночь "
                                 "(без --apply только показать)")
     p.add_argument("--apply", action="store_true", help="выполнить, а не только показать")

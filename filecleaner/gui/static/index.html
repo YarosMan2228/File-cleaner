@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Cleaner</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span>File Cleaner</div>
+  <nav class="tabs" role="tablist" aria-label="Разделы">
+    <button type="button" role="tab" id="tab-home" aria-controls="view-home" aria-selected="true">Главная</button>
+    <button type="button" role="tab" id="tab-review" aria-controls="view-review" aria-selected="false" tabindex="-1">
+      На решение <span class="count" id="review-count" hidden></span>
+    </button>
+    <button type="button" role="tab" id="tab-history" aria-controls="view-history" aria-selected="false" tabindex="-1">История</button>
+  </nav>
+  <p class="ai" id="ai-status" role="status"><span class="dot" aria-hidden="true"></span><span id="ai-text">ИИ: проверяю…</span></p>
+</header>
+
+<main>
+  <!-- ============================================================ Главная -->
+  <section id="view-home" role="tabpanel" aria-labelledby="tab-home">
+    <div class="panel intro">
+      <h1>Приступай</h1>
+      <p class="lead">Уберу мусор и лишние копии на всех дисках и разложу Загрузки, Рабочий стол и Документы
+        по учёбе, работе и типам. Всё считается на этом компьютере — в интернет ничего не уходит.</p>
+      <ul class="steps">
+        <li>Кэши и временные файлы — удаляю сразу, они восстанавливаются сами.</li>
+        <li>Копии в Загрузках и на Рабочем столе — удаляю, сверив байт в байт с оригиналом.</li>
+        <li>Спорное откладываю в «На решение» — ты решаешь кнопками.</li>
+        <li>Что помнят программы и защищённое правилами — не трогаю.</li>
+      </ul>
+      <div class="actions">
+        <button type="button" class="btn primary" id="btn-preview">Посмотреть, что будет</button>
+        <button type="button" class="btn" id="btn-run" disabled>Приступить</button>
+        <label class="check"><input type="checkbox" id="opt-sleep"> Когда закончу — усыпить компьютер</label>
+      </div>
+      <p class="hint" id="run-hint">Сначала посмотри, что будет: без этого «Приступить» не включится.</p>
+    </div>
+
+    <div class="panel" id="task-panel" hidden>
+      <div class="panel-head">
+        <h2 id="task-title">Работаю…</h2>
+        <button type="button" class="btn small" id="btn-stay" hidden>Не усыплять</button>
+      </div>
+      <div class="bar" id="task-bar" role="progressbar" aria-label="Идёт работа"><span></span></div>
+      <p class="progress" id="task-progress" aria-live="polite"></p>
+      <ol class="log" id="task-log" aria-label="Что уже сделано"></ol>
+    </div>
+
+    <div class="panel" id="plan-panel" hidden>
+      <h2>Что будет</h2>
+      <div class="stats" id="plan-stats"></div>
+      <div id="plan-details"></div>
+    </div>
+
+    <div class="panel" id="result-panel" hidden>
+      <h2>Готово</h2>
+      <div class="stats" id="result-stats"></div>
+      <div id="result-details"></div>
+      <div class="actions">
+        <button type="button" class="btn" id="btn-result-report">Открыть отчёт</button>
+        <button type="button" class="btn" id="btn-result-review">Перейти к решению</button>
+      </div>
+    </div>
+
+    <p class="last" id="last-run"></p>
+  </section>
+
+  <!-- ============================================================ На решение -->
+  <section id="view-review" role="tabpanel" aria-labelledby="tab-review" hidden>
+    <div class="view-head">
+      <h1>На решение</h1>
+      <p class="meta" id="review-meta"></p>
+    </div>
+    <p class="lead">Отметь, что удалить насовсем, а что вернуть на место. Пока не нажмёшь кнопку, ничего не изменится.</p>
+    <div class="toolbar" id="review-toolbar" hidden>
+      <label class="search"><span class="sr-only">Найти</span>
+        <input type="search" id="review-filter" placeholder="Найти по имени, папке или причине" autocomplete="off">
+      </label>
+      <button type="button" class="btn small" id="btn-select-all">Выбрать всё</button>
+      <button type="button" class="btn small" id="btn-select-none">Снять выбор</button>
+    </div>
+    <div id="review-list" aria-live="polite"></div>
+    <div class="actionbar" id="review-actions" hidden>
+      <p id="review-selected" aria-live="polite"></p>
+      <button type="button" class="btn" id="btn-restore">Вернуть на место</button>
+      <button type="button" class="btn danger" id="btn-delete">Удалить выбранное</button>
+    </div>
+  </section>
+
+  <!-- ============================================================ История -->
+  <section id="view-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+    <div class="view-head"><h1>История</h1></div>
+    <p class="lead">Что программа уже сделала. Отмена возвращает перенесённое на места; удалённое насовсем не вернуть.</p>
+    <div id="history-list"></div>
+  </section>
+</main>
+
+<dialog id="confirm" aria-labelledby="confirm-title">
+  <form method="dialog">
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-text"></p>
+    <div class="actions end">
+      <button type="submit" class="btn" value="cancel" id="confirm-cancel">Отмена</button>
+      <button type="submit" class="btn danger" value="ok" id="confirm-ok"></button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

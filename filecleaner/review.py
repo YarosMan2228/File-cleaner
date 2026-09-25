@@ -261,6 +261,42 @@ def approve(batch: Batch, session: Session) -> ApproveResult:
     return result
 
 
+def resolve(batch: Batch, session: Session, restore: set[str], delete: set[str]) -> ApproveResult:
+    """Решение по отдельным объектам — без перетаскивания в «_ВЕРНУТЬ» (для окна программы).
+
+    Объекты задаются путём внутри партии (entry["staged"]): restore — вернуть на место, delete — удалить.
+    Остальное ждёт дальше.
+    """
+    result = ApproveResult()
+    waiting: list[dict] = []
+    for entry in batch.entries:
+        key = entry["staged"]
+        if key not in restore and key not in delete:
+            waiting.append(entry)
+            continue
+        staged = batch.path / key
+        if not os.path.lexists(long_path(staged)):
+            result.kept_outside += 1
+            continue
+        try:
+            if key in restore:
+                final = session.move(staged, Path(entry["original"]), op="move", restored=True)
+                result.restored.append(display(final))
+            else:
+                session.delete(staged, entry.get("size", 0), is_dir=bool(entry.get("dir")), original=entry["original"])
+                result.deleted += 1
+                result.freed += entry.get("size", 0)
+        except OSError as exc:
+            waiting.append(entry)
+            verb = "не вернул" if key in restore else "не удалил"
+            result.errors.append(f"{verb} {display(staged)}: {exc.strerror or exc}")
+    _cleanup(batch, waiting)
+    if waiting:  # партия ещё ждёт: отчёт и «_ВЕРНУТЬ» — по оставшемуся
+        (batch.path / config.RETURN_DIR_NAME).mkdir(exist_ok=True)
+        (batch.path / REPORT).write_text(batch_report(batch), encoding="utf-8")
+    return result
+
+
 def _cleanup(batch: Batch, failed: list[dict]) -> None:
     """Убирает опустевшие папки. Неудалённое остаётся в партии, чужие файлы — не трогаем."""
     root = long_path(batch.path)
