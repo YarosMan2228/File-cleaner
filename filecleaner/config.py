@@ -124,7 +124,7 @@ ARCHIVE_EXTS = TYPES["Архивы"]
 INSTALLER_EXTS = frozenset({"exe", "msi", "msix", "msixbundle", "appx", "appxbundle"})
 PARTIAL_EXTS = frozenset({"crdownload", "part", "partial", "opdownload", "download", "!ut", "!qb"})
 VM_DISK_EXTS = frozenset({"vdi", "vmdk", "vhd", "vhdx"})
-SHORTCUT_EXTS = frozenset({"lnk", "url"})
+SHORTCUT_EXTS = frozenset({"lnk", "url", "appref-ms"})  # appref-ms — ярлык программы ClickOnce (Desigo CC)
 SERVICE_NAMES = frozenset({"desktop.ini", "thumbs.db", "ehthumbs.db", ".ds_store"})
 
 # Уже сжатые форматы: прозрачное сжатие NTFS им почти ничего не даёт.

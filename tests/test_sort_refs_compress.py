@@ -17,6 +17,7 @@ def test_sort_plan_apply_and_undo(sandbox, rules):
     write(dl / "notes.txt", b"txt" * 100)
     write(dl / "data.xyz", b"???")
     write(dl / "shortcut.lnk", b"lnk")
+    write(dl / "Desigo CC ClickOnce.appref-ms", b"app")
     write(dl / "Документы" / "same.pdf", b"same" * 100)
     write(dl / "same.pdf", b"same" * 100)
     write(dl / "DCC_V9_setup" / "setup.exe", b"exe" * 100)
@@ -38,6 +39,7 @@ def test_sort_plan_apply_and_undo(sandbox, rules):
     assert where["same.pdf"].duplicate_of == dl / "Документы" / "same.pdf"
     assert "data.xyz" not in where and dl / "data.xyz" in plan.unknown
     assert "shortcut.lnk" not in where and "Telegram Desktop" not in where
+    assert "Desigo CC ClickOnce.appref-ms" not in where
 
     with journal.Session("sort", "Сортировка") as session:
         result = organizer.apply_sort(plan, rules, session)
