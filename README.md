@@ -119,6 +119,21 @@ python -m filecleaner rules --edit         # правила: что считат
 
 Без `--apply` любая команда только показывает план и сохраняет HTML-отчёт.
 
+### Сборка программы: .exe и установщик
+
+```
+pip install pyinstaller
+python packaging/build.py
+```
+
+В `dist/` появятся:
+- `FileCleaner/` — готовая программа без Python: `File Cleaner.exe` (окно) и `filecleaner.exe` (команды);
+- `FileCleaner-<версия>-portable.zip` — та же папка одним архивом;
+- `FileCleaner-<версия>-setup.exe` — установщик, если есть Inno Setup 6 (`winget install JRSoftware.InnoSetup`).
+
+Установщик ставит программу только для текущего пользователя, права администратора не нужны.
+Правила, журнал и кэш ИИ лежат в `%LOCALAPPDATA%\FileCleaner` и при удалении программы остаются.
+
 ## Где что лежит
 
 - `%LOCALAPPDATA%\FileCleaner\index.db` — индекс и хэши (повторный скан быстрый).

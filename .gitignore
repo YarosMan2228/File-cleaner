@@ -6,3 +6,4 @@ venv/
 *.egg-info/
 build/
 dist/
+packaging/version_info.txt
