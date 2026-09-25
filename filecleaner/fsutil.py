@@ -342,6 +342,12 @@ def name_tokens(name: str) -> list[str]:
 
 
 def keyword_match(tokens: list[str], keyword: str) -> bool:
-    """Слово целиком; длинные ключевые слова (от 4 букв) — ещё и как начало слова."""
+    """Слово целиком; длинные ключевые слова (от 4 букв) — ещё и как начало слова.
+
+    Ключевое слово из нескольких частей («pw2» → pw, 2) ищется как те же части подряд в имени.
+    """
+    parts = name_tokens(keyword)
+    if len(parts) > 1:
+        return any(tokens[i:i + len(parts)] == parts for i in range(len(tokens) - len(parts) + 1))
     kw = keyword.lower()
     return any(t == kw or (len(kw) >= 4 and t.startswith(kw)) for t in tokens)

@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 from . import config, refs, review
 from .ai import LocalAI, text_snippet
-from .analyzers import Finding
+from .analyzers import Finding, protection
 from .fsutil import (
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, PartialMoveError, attributes, display, is_cloud_only,
     is_link, key_of, keyword_match, list_dir, long_path, looks_like_program_folder, name_tokens, unique_path, walk,
@@ -26,6 +26,7 @@ Progress = Callable[[str], None]
 SETUP_NAMES = {"setup.exe", "install.exe", "installer.exe", "autorun.inf"}
 # Какие файлы показывать ИИ, если правила не нашли сектор (у остальных смысл понятен из типа).
 AI_TYPES = {"Документы", "Таблицы", "Презентации", "Книги", None}
+PROTECTED = "защищено правилами [protect]"
 
 
 def _quiet(_: str) -> None:
@@ -161,6 +162,7 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
     moves: list[SortMove] = []
     unknown: list[Path] = []
     skipped: Counter = Counter()
+    protected_by = protection(rules)
 
     for entry in sorted(listing, key=lambda e: e.name.lower()):
         try:
@@ -174,12 +176,18 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
         if attributes(st) & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM):
             skipped["скрытые и системные"] += 1
             continue
+        if protected_by(Path(entry.path)):
+            skipped[PROTECTED] += 1
+            continue
         if is_dir:
             if entry.name.lower() in reserved or not move_folders:
                 continue
             progress(f"Смотрю папку {entry.name}…")
-            move = _plan_folder(Path(entry.path), folder, sectors, type_targets, now, min_age, taken, ask_ai)
-            if move:
+            move = _plan_folder(Path(entry.path), folder, sectors, type_targets, now, min_age, taken, ask_ai,
+                                protected_by)
+            if isinstance(move, str):
+                skipped[move] += 1
+            elif move:
                 moves.append(move)
             else:
                 skipped["папки: непонятно, куда их"] += 1
@@ -246,14 +254,20 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
 
 
 def _plan_folder(path: Path, root: Path, sectors: list[dict], type_targets: dict, now: float,
-                 min_age: float, taken: set[str], ask_ai: Callable | None = None) -> SortMove | None:
-    """Папку переносим целиком, только если понятно куда: по имени, по содержимому или это дистрибутив."""
+                 min_age: float, taken: set[str], ask_ai: Callable | None = None,
+                 protected_by: Callable[[Path], str | None] | None = None) -> SortMove | str | None:
+    """Папку переносим целиком, только если понятно куда: по имени, по содержимому или это дистрибутив.
+
+    Строка вместо переноса — причина не трогать папку (внутри защищённый файл).
+    """
     by_type: Counter = Counter()
     total = count = 0
     newest = 0.0
     has_setup = False
     sample: list[str] = []
     for entry, _ in walk(path, rules=False):
+        if protected_by is not None and protected_by(Path(entry.path)):
+            return PROTECTED
         try:
             st = entry.stat(follow_symlinks=False)
         except OSError:

@@ -19,7 +19,8 @@ def make_zip(path: Path, files: dict[str, bytes]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as z:
         for name, data in files.items():
-            z.writestr(name, data)
+            # Время внутри zip — с точностью до 2 с: без фиксированного одинаковые архивы иногда различаются.
+            z.writestr(zipfile.ZipInfo(name, date_time=(2024, 1, 1, 0, 0, 0)), data)
     os.utime(path, (time.time() - 40 * 86400,) * 2)
 
 

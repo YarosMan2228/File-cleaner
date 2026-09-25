@@ -143,6 +143,7 @@ SKIP_DIR_NAMES = frozenset({
     "program files", "program files (x86)", "programdata", "windowsapps", "$winreagent", "recovery",
     "perflogs", "config.msi", "msocache", "node_modules", "__pycache__", "site-packages", "venv",
     "steamapps", "steamlibrary", "epic games", "riot games", "xboxgames", "my games", "saved games",
+    "cacheclip",  # кэш DaVinci Resolve: одинаковые кадры — не копии, программа ведёт его сама
 })
 # Папка проекта: файлы внутри по одному не удаляем и не переносим.
 PROJECT_MARKERS = frozenset({

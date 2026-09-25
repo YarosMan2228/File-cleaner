@@ -135,3 +135,37 @@ def test_copy_names_and_tokens():
     assert keyword_match(name_tokens("Lab3 report"), "lab") and not keyword_match(name_tokens("label"), "lab")
     assert keyword_match(name_tokens("Лекция 5"), "лекц")
     assert parse_size("100KB") == 102400 and parse_size("1,5 ГБ") == int(1.5 * 1024**3)
+
+
+def test_protected_files_and_folders_are_not_sorted(sandbox, rules):
+    dl = sandbox / "Downloads"
+    write(dl / "dbms_pw2_share.vbox", b"vm" * 100)
+    write(dl / "PW2_Report.docx", b"doc" * 100)
+    write(dl / "Course VM" / "dbms_pw2.vdi", b"disk" * 100)   # защищённый файл внутри папки
+    write(dl / "B" / "keep.pdf", b"pdf" * 100)
+    write(dl / "notes.txt", b"txt" * 100)
+    rules.data["protect"]["name_keywords"] = ["pw2"]
+    rules.data["protect"]["paths"] = [str(dl / "B")]
+
+    plan = organizer.plan_sort(dl, rules, check_references=False)
+    moved = {m.src.name for m in plan.moves}
+    assert moved == {"notes.txt"}                               # pw2, папка с pw2 и путь из [protect] — на месте
+    assert plan.skipped[organizer.PROTECTED] == 4
+
+
+def test_multi_part_keyword_matches_consecutive_words():
+    from filecleaner.fsutil import keyword_match, name_tokens
+
+    assert keyword_match(name_tokens("dbms_pw2_share.vbox"), "pw2")
+    assert keyword_match(name_tokens("DKN_AB2_ШАК12.xlsx"), "ab2")
+    assert not keyword_match(name_tokens("pw20_notes.txt"), "pw2")
+    assert not keyword_match(name_tokens("2_pw.txt"), "pw2")
+    assert keyword_match(name_tokens("Kyivstar_BMS.zip"), "kyiv")    # одно слово — по-прежнему и как начало
+
+
+def test_davinci_cache_is_not_walked(tmp_path):
+    from filecleaner.fsutil import walk
+
+    write(tmp_path / "CacheClip" / "a" / "0001.dvcc", b"x")
+    write(tmp_path / "Video" / "clip.mp4", b"x")
+    assert [e.name for e, _ in walk(tmp_path)] == ["clip.mp4"]

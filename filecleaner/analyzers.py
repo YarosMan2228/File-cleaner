@@ -631,16 +631,26 @@ def resolve(findings: list[Finding]) -> list[Finding]:
     return list(chosen.values())
 
 
-def apply_protection(findings: list[Finding], rules: Rules) -> None:
-    """Правила [protect]: такие файлы только в отчёт."""
+def protection(rules: Rules) -> Callable[[Path], str | None]:
+    """Проверка по правилам [protect]: вернёт правило, которое защищает путь, или None."""
     paths = [Path(p).expanduser() for p in rules.get("protect.paths", []) or []]
     keywords = [k for k in rules.get("protect.name_keywords", []) or [] if k]
+
+    def protected_by(path: Path) -> str | None:
+        tokens = name_tokens(path.name)
+        return next((str(p) for p in paths if is_under(path, p)), None) or \
+            next((k for k in keywords if keyword_match(tokens, k)), None)
+
+    return protected_by
+
+
+def apply_protection(findings: list[Finding], rules: Rules) -> None:
+    """Правила [protect]: такие файлы только в отчёт."""
+    protected_by = protection(rules)
     for finding in findings:
         if finding.rule.startswith("junk.") or finding.mode == "report":
             continue
-        tokens = name_tokens(finding.path.name)
-        hit = next((str(p) for p in paths if is_under(finding.path, p)), None) or \
-            next((k for k in keywords if keyword_match(tokens, k)), None)
+        hit = protected_by(finding.path)
         if hit:
             finding.mode = "report"
             finding.reason += f" — защищено правилом «{hit}»"
