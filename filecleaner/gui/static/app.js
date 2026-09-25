@@ -126,10 +126,12 @@ const state = {
   deselected: new Set(),   // что ты снял; всё остальное в «На решение» выбрано
   filter: '',
   busy: false,
+  settings: null,          // как сохранено
+  draft: null,             // что сейчас в форме
 };
 
 // ================================================================ вкладки
-const VIEWS = ['home', 'review', 'history'];
+const VIEWS = ['home', 'review', 'history', 'settings'];
 
 function showView(name, focusTab = false) {
   for (const view of VIEWS) {
@@ -143,6 +145,7 @@ function showView(name, focusTab = false) {
   state.view = name;
   if (name === 'review') loadReview();
   if (name === 'history') loadHistory();
+  if (name === 'settings' && !settingsDirty()) loadSettings();  // несохранённое не затираем
 }
 
 function bindTabs() {
@@ -560,10 +563,186 @@ async function undo(session) {
   refreshStatus();
 }
 
+// ================================================================ настройки
+const splitList = (text) => text.split(',').map((s) => s.trim()).filter(Boolean);
+const splitLines = (text) => text.split('\n').map((s) => s.trim()).filter(Boolean);
+const settingsDirty = () => Boolean(state.draft && state.settings)
+  && JSON.stringify(state.draft) !== JSON.stringify(state.settings);
+
+function markDirty() {
+  $('#settings-actions').hidden = !settingsDirty();
+}
+
+/** Поле: подпись, элемент ввода и подсказка; подпись связана с полем, как у обычной формы. */
+function field(label, control, hint) {
+  return h('label', { class: 'field' }, h('span', { class: 'field-label' }, label), control,
+    hint ? h('span', { class: 'hint' }, hint) : null);
+}
+
+function textInput(value, onChange, attrs = {}) {
+  const input = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', ...attrs });
+  input.value = value ?? '';
+  input.addEventListener('input', () => { onChange(input.value); markDirty(); });
+  return input;
+}
+
+function textArea(value, onChange, rows = 3) {
+  const area = h('textarea', { rows: String(rows), spellcheck: 'false' });
+  area.value = value ?? '';
+  area.addEventListener('input', () => { onChange(area.value); markDirty(); });
+  return area;
+}
+
+function toggle(checked, label, onChange) {
+  const box = h('input', { type: 'checkbox' });
+  box.checked = Boolean(checked);
+  box.addEventListener('change', () => { onChange(box.checked); markDirty(); });
+  return h('label', { class: 'check' }, box, label);
+}
+
+function sectorCard(sector, index, types) {
+  const typeBoxes = types.map((type) => toggle(sector.types.includes(type), type, (on) => {
+    sector.types = on ? [...sector.types, type] : sector.types.filter((t) => t !== type);
+  }));
+  const remove = h('button', {
+    type: 'button', class: 'btn small',
+    onclick: () => { state.draft.sectors.splice(index, 1); renderSettings(); markDirty(); },
+  }, 'Удалить сектор');
+  return h('fieldset', { class: 'sector' },
+    h('legend', { class: 'sr-only' }, `Сектор «${sector.name || 'без названия'}»`),
+    h('div', { class: 'sector-head' },
+      field('Название — это имя папки', textInput(sector.name, (v) => { sector.name = v; }, { maxlength: '60' })),
+      remove),
+    field('Описание для ИИ', textArea(sector.description, (v) => { sector.description = v; }),
+      'Чем подробнее, тем точнее ИИ раскладывает: чем ты тут занимаешься, какие проекты, какие слова встречаются.'),
+    h('div', { class: 'grid-2' },
+      field('Ключевые слова в имени файла', textInput(sector.keywords.join(', '), (v) => { sector.keywords = splitList(v); }),
+        'Через запятую: rtu, lab, домашка'),
+      field('Сайты, откуда скачано', textInput(sector.sources.join(', '), (v) => { sector.sources = splitList(v); }),
+        'Через запятую: rtu.lv, ortus.rtu.lv')),
+    h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Все файлы этих типов — сюда'),
+      h('div', { class: 'types' }, typeBoxes)),
+    field('Где хранить (необязательно)', textInput(sector.target, (v) => { sector.target = v; },
+      { placeholder: `например B:/${sector.name || 'Сектор'}` }),
+      'Пусто — папка сектора рядом с разбираемой папкой.'));
+}
+
+function renderSettings() {
+  const draft = state.draft;
+  const body = $('#settings-body');
+  if (!draft) return;
+  const addSector = h('button', {
+    type: 'button', class: 'btn',
+    onclick: () => {
+      draft.sectors.push({ name: '', description: '', keywords: [], sources: [], types: [], target: '' });
+      renderSettings();
+      markDirty();
+      body.querySelector('.sector:last-of-type input')?.focus();
+    },
+  }, 'Добавить сектор');
+
+  const confidence = h('input', { type: 'range', min: '50', max: '100', step: '5', 'aria-describedby': 'confidence-hint' });
+  confidence.value = String(draft.ai.min_confidence);
+  const confidenceValue = h('output', {}, `${draft.ai.min_confidence}`);
+  confidence.addEventListener('input', () => {
+    draft.ai.min_confidence = Number(confidence.value);
+    confidenceValue.textContent = confidence.value;
+    markDirty();
+  });
+
+  const afterChoices = [['nothing', 'ничего'], ['sleep', 'усыпить компьютер'], ['shutdown', 'выключить компьютер']];
+  const after = h('div', { class: 'radios', role: 'radiogroup', 'aria-label': 'Когда «Приступай» закончит' },
+    afterChoices.map(([value, label]) => {
+      const radio = h('input', { type: 'radio', name: 'night-after', value });
+      radio.checked = draft.night.after === value;
+      radio.addEventListener('change', () => { draft.night.after = value; markDirty(); });
+      return h('label', { class: 'check' }, radio, label);
+    }));
+
+  body.replaceChildren(
+    h('div', { class: 'panel' },
+      h('h2', {}, 'Секторы — куда раскладывать'),
+      h('p', { class: 'hint' }, 'Файл попадает в сектор, если скачан с сайта из списка, в имени есть ключевое слово, '
+        + 'подходит тип или его узнал ИИ по описанию. Внутри сектора файлы раскладываются по типам.'),
+      draft.sectors.map((sector, i) => sectorCard(sector, i, state.settings.types)),
+      h('div', { class: 'actions' }, addSector)),
+    h('div', { class: 'panel' },
+      h('h2', {}, 'ИИ'),
+      toggle(draft.ai.enabled, 'Раскладывать с помощью локальной модели (Ollama) — файлы не уходят в интернет',
+        (on) => { draft.ai.enabled = on; }),
+      h('div', { class: 'grid-2' },
+        field('Модель', textInput(draft.ai.model, (v) => { draft.ai.model = v.trim(); }), 'Например qwen2.5:7b'),
+        h('label', { class: 'field' },
+          h('span', { class: 'field-label' }, 'Уверенность, с которой файл уходит в сектор: ', confidenceValue),
+          confidence,
+          h('span', { class: 'hint', id: 'confidence-hint' }, 'При 70 модель часто угадывает, 80 — проверенный порог.'))),
+      field('О тебе — для ИИ', textArea(draft.ai.about, (v) => { draft.ai.about = v; }),
+        'Пара фраз: где учишься, кем работаешь, над какими проектами. После правки описаний ИИ заново '
+        + 'посмотрит файлы при следующем запуске.')),
+    h('div', { class: 'panel' },
+      h('h2', {}, 'Что не трогать'),
+      field('Не трогать совсем — слова в имени', textInput(draft.protect.keep_keywords.join(', '),
+        (v) => { draft.protect.keep_keywords = splitList(v); }), 'Такие файлы не удаляются и не раскладываются. Например: pw2'),
+      field('Не трогать совсем — папки и файлы', textArea(draft.protect.paths.join('\n'),
+        (v) => { draft.protect.paths = splitLines(v); }, 3), 'Каждый путь с новой строки, например B:/PW2_database'),
+      field('Не удалять, но раскладывать можно — слова в имени', textInput(draft.protect.name_keywords.join(', '),
+        (v) => { draft.protect.name_keywords = splitList(v); }), 'Паспорта, договоры, сертификаты — только в отчёт, не на удаление.')),
+    h('div', { class: 'panel' },
+      h('h2', {}, '«Приступай»'),
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Когда закончит'), after),
+      toggle(draft.night.auto_delete, 'Проверенные копии в Загрузках и на Рабочем столе удалять сразу (сверив с оригиналом)',
+        (on) => { draft.night.auto_delete = on; }),
+      toggle(draft.night.drives, 'Искать мусор и копии на всех дисках, а не только в личных папках',
+        (on) => { draft.night.drives = on; }),
+      field('Какие папки раскладывать', textArea(draft.night.sort_folders.join('\n'),
+        (v) => { draft.night.sort_folders = splitLines(v); }, 3),
+        'downloads, desktop, documents или путь — каждая с новой строки. Подпапки переносятся только в Загрузках и на Рабочем столе.')),
+  );
+  markDirty();
+}
+
+async function loadSettings() {
+  try {
+    state.settings = await api('/api/settings');
+  } catch (error) {
+    $('#settings-body').replaceChildren(h('p', { class: 'errors' }, `Не удалось загрузить: ${error.message}`));
+    return;
+  }
+  state.draft = structuredClone(state.settings);
+  renderSettings();
+}
+
+function bindSettings() {
+  $('#settings-form').addEventListener('submit', (event) => event.preventDefault());
+  $('#btn-settings-save').addEventListener('click', async () => {
+    const button = $('#btn-settings-save');
+    button.disabled = true;
+    try {
+      state.settings = await api('/api/settings', state.draft);
+      state.draft = structuredClone(state.settings);
+      renderSettings();
+      toast('Сохранено.');
+      refreshStatus();
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  $('#btn-settings-reset').addEventListener('click', () => {
+    state.draft = structuredClone(state.settings);
+    renderSettings();
+  });
+  $('#btn-open-rules').addEventListener('click', () => {
+    api('/api/open', { what: 'rules' }).catch((error) => toast(error.message, true));
+  });
+}
+
 // ================================================================ старт
 bindTabs();
 bindHome();
 bindReview();
+bindSettings();
 if (VIEWS.includes(HASH.get('view'))) showView(HASH.get('view'));
 refreshStatus(true);
 setInterval(refreshStatus, 5000);  // заодно сигнал серверу, что окно открыто

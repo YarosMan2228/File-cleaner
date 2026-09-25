@@ -18,11 +18,11 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .. import __version__, config, journal, night, review
+from .. import __version__, config, journal, night, review, settings
 from ..ai import LocalAI
 from ..analyzers import Finding
 from ..fsutil import display, is_under
-from ..rules import Rules
+from ..rules import Rules, ensure_user_rules
 
 STATIC = Path(__file__).with_name("static")
 FILES = {
@@ -277,6 +277,8 @@ class App:
             if not ours or target.suffix.lower() != ".html" or not target.exists():
                 raise ApiError(HTTPStatus.BAD_REQUEST, "Это не отчёт программы.")
             os.startfile(target)  # type: ignore[attr-defined]  # откроется в браузере
+        elif what == "rules":
+            subprocess.Popen(["notepad.exe", str(ensure_user_rules())])  # для тех, кто хочет править руками
         elif what == "reveal":
             if not os.path.lexists(target):
                 raise ApiError(HTTPStatus.NOT_FOUND, "Файла уже нет на месте.")
@@ -284,6 +286,14 @@ class App:
         else:
             raise ApiError(HTTPStatus.BAD_REQUEST, "Непонятно, что открыть.")
         return {"ok": True}
+
+    def save_settings(self, body: dict) -> dict:
+        try:
+            settings.save(body)
+        except settings.SettingsError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+        self._ai = None  # модель или «включён» могли поменяться
+        return settings.read(self.load_rules())
 
     def reveal_item(self, batch_path: str, item_id: str) -> dict:
         batch = next((b for b in review.find_batches() if str(b.path) == batch_path), None)
@@ -294,7 +304,8 @@ class App:
     # ---------------------------------------------------------------- маршруты
     def get(self, path: str) -> dict | list:
         routes = {"/api/status": self.status, "/api/review": review_list, "/api/history": history_list,
-                  "/api/task": lambda: self.task.snapshot() if self.task else None}
+                  "/api/task": lambda: self.task.snapshot() if self.task else None,
+                  "/api/settings": lambda: settings.read(self.load_rules())}
         if path not in routes:
             raise ApiError(HTTPStatus.NOT_FOUND, "Нет такого раздела.")
         return routes[path]()
@@ -312,6 +323,8 @@ class App:
             return self.open_path(str(body.get("what", "")), str(body.get("path", "")))
         if path == "/api/reveal":
             return self.reveal_item(str(body.get("batch", "")), str(body.get("id", "")))
+        if path == "/api/settings":
+            return self.save_settings(body)
         if path == "/api/stay-awake":
             if self.task is not None:
                 self.task.stop.set()

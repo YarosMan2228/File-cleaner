@@ -50,7 +50,7 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
 h1 { font-size: 22px; font-weight: 600; }
 h2 { font-size: 17px; font-weight: 600; }
 p { margin: 0; }
-button, input { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
@@ -178,6 +178,26 @@ td.pick input, th.pick input, .group-head input { width: 16px; height: 16px; acc
 .history-row:first-child { border-top: 0; }
 .history-row time { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 .tag { font-size: 13px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- настройки */
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field-label { font-size: 14px; font-weight: 600; }
+.field input[type="text"], .field textarea {
+  width: 100%; padding: 8px 12px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface); resize: vertical;
+}
+.field input[type="text"] { height: 36px; }
+.field input[type="range"] { width: 100%; accent-color: var(--accent); margin: 8px 0 0; }
+.field output { font-variant-numeric: tabular-nums; color: var(--accent); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px 16px; }
+.sector {
+  margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-2); display: flex; flex-direction: column; gap: 12px; min-width: 0;
+}
+.sector-head { display: flex; align-items: flex-end; gap: 12px; }
+.sector-head .field { flex: 1; }
+.types, .radios { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.check input[type="radio"] { width: 16px; height: 16px; accent-color: var(--accent); }
 
 /* ---------------------------------------------------------------- пустые состояния */
 .empty { text-align: center; padding: 48px 16px; color: var(--muted); }

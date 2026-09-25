@@ -15,6 +15,7 @@
       На решение <span class="count" id="review-count" hidden></span>
     </button>
     <button type="button" role="tab" id="tab-history" aria-controls="view-history" aria-selected="false" tabindex="-1">История</button>
+    <button type="button" role="tab" id="tab-settings" aria-controls="view-settings" aria-selected="false" tabindex="-1">Настройки</button>
   </nav>
   <p class="ai" id="ai-status" role="status"><span class="dot" aria-hidden="true"></span><span id="ai-text">ИИ: проверяю…</span></p>
 </header>
@@ -96,6 +97,23 @@
     <div class="view-head"><h1>История</h1></div>
     <p class="lead">Что программа уже сделала. Отмена возвращает перенесённое на места; удалённое насовсем не вернуть.</p>
     <div id="history-list"></div>
+  </section>
+
+  <!-- ============================================================ Настройки -->
+  <section id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <div class="view-head">
+      <h1>Настройки</h1>
+      <button type="button" class="link" id="btn-open-rules">Открыть файл правил</button>
+    </div>
+    <p class="lead">Хранятся в файле правил на этом компьютере. Пояснения в файле при сохранении не пропадают.</p>
+    <form id="settings-form" novalidate>
+      <div id="settings-body"></div>
+    </form>
+    <div class="actionbar" id="settings-actions" hidden>
+      <p>Есть несохранённые изменения</p>
+      <button type="button" class="btn" id="btn-settings-reset">Отменить</button>
+      <button type="button" class="btn primary" id="btn-settings-save">Сохранить</button>
+    </div>
   </section>
 </main>
 
