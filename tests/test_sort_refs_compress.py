@@ -146,13 +146,14 @@ def test_protected_files_and_folders_are_not_sorted(sandbox, rules):
     write(dl / "Course VM" / "dbms_pw2.vdi", b"disk" * 100)   # защищённый файл внутри папки
     write(dl / "B" / "keep.pdf", b"pdf" * 100)
     write(dl / "notes.txt", b"txt" * 100)
-    rules.data["protect"]["name_keywords"] = ["pw2"]
+    write(dl / "Siemens contract.pdf", b"pdf" * 100)          # «contract» — от удаления, но не от сортировки
+    rules.data["protect"]["keep_keywords"] = ["pw2"]
     rules.data["protect"]["paths"] = [str(dl / "B")]
 
     plan = organizer.plan_sort(dl, rules, check_references=False)
-    moved = {m.src.name for m in plan.moves}
-    assert moved == {"notes.txt"}                               # pw2, папка с pw2 и путь из [protect] — на месте
-    assert plan.skipped[organizer.PROTECTED] == 4
+    where = {m.src.name: m.label for m in plan.moves}
+    assert where == {"notes.txt": "Документы", "Siemens contract.pdf": "Работа / Документы"}
+    assert plan.skipped[organizer.PROTECTED] == 4              # pw2, папка с pw2 и путь из [protect] — на месте
 
 
 def test_multi_part_keyword_matches_consecutive_words():

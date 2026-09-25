@@ -631,10 +631,16 @@ def resolve(findings: list[Finding]) -> list[Finding]:
     return list(chosen.values())
 
 
-def protection(rules: Rules) -> Callable[[Path], str | None]:
-    """Проверка по правилам [protect]: вернёт правило, которое защищает путь, или None."""
+def protection(rules: Rules, sorting: bool = False) -> Callable[[Path], str | None]:
+    """Проверка по правилам [protect]: вернёт правило, которое защищает путь, или None.
+
+    paths и keep_keywords — «не трогать совсем». name_keywords (паспорт, договор…) защищают только
+    от удаления: раскладывать такие документы по секторам можно (sorting=True их пропускает).
+    """
     paths = [Path(p).expanduser() for p in rules.get("protect.paths", []) or []]
-    keywords = [k for k in rules.get("protect.name_keywords", []) or [] if k]
+    keywords = [k for k in rules.get("protect.keep_keywords", []) or [] if k]
+    if not sorting:
+        keywords += [k for k in rules.get("protect.name_keywords", []) or [] if k]
 
     def protected_by(path: Path) -> str | None:
         tokens = name_tokens(path.name)

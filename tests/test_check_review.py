@@ -134,3 +134,13 @@ def test_protect_keywords_only_report(sandbox, rules):
     result = check(sandbox, rules)
     [finding] = [f for f in result.findings if f.path.parent.name == "Downloads"]
     assert finding.mode == "report" and "паспорт" in finding.reason
+
+
+def test_keep_keywords_protect_from_deletion_too(sandbox, rules):
+    write(sandbox / "Documents" / "keep" / "PW2_Report.docx", A)
+    time.sleep(0.05)
+    write(sandbox / "Downloads" / "PW2_Report.docx", A)
+    rules.data["protect"]["keep_keywords"] = ["pw2"]
+    result = check(sandbox, rules)
+    [finding] = [f for f in result.findings if f.path.parent.name == "Downloads"]
+    assert finding.mode == "report" and "pw2" in finding.reason

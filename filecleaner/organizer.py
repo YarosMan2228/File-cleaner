@@ -26,7 +26,7 @@ Progress = Callable[[str], None]
 SETUP_NAMES = {"setup.exe", "install.exe", "installer.exe", "autorun.inf"}
 # Какие файлы показывать ИИ, если правила не нашли сектор (у остальных смысл понятен из типа).
 AI_TYPES = {"Документы", "Таблицы", "Презентации", "Книги", None}
-PROTECTED = "защищено правилами [protect]"
+PROTECTED = "не трогать: [protect] paths и keep_keywords"
 
 
 def _quiet(_: str) -> None:
@@ -162,7 +162,7 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
     moves: list[SortMove] = []
     unknown: list[Path] = []
     skipped: Counter = Counter()
-    protected_by = protection(rules)
+    protected_by = protection(rules, sorting=True)
 
     for entry in sorted(listing, key=lambda e: e.name.lower()):
         try:
