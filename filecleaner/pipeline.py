@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 
 from . import review
 from .analyzers import RECYCLE_BIN, CheckResult, Finding
-from .fsutil import display, long_path
+from .fsutil import display, long_path, plural
+from .i18n import tr
 from .journal import Session
 from .winutil import empty_recycle_bin
 
@@ -37,13 +38,13 @@ def apply_check(result: CheckResult, session: Session, skip_groups: set[str] | N
     to_delete = [f for f in chosen if f.mode == "delete"]
     for i, finding in enumerate(to_delete, 1):
         if i % 200 == 0:
-            progress(f"Удаляю кэши и временные файлы: {i}/{len(to_delete)}")
+            progress(tr("Удаляю кэши и временные файлы: {i}/{total}", i=i, total=len(to_delete)))
         try:
             if finding.path == RECYCLE_BIN:
                 if empty_recycle_bin():
                     session.record("delete", path="Корзина", size=finding.size, rule=finding.rule)
                 else:
-                    raise OSError("Windows не дала очистить Корзину")
+                    raise OSError(tr("Windows не дала очистить Корзину"))
             elif finding.rule == "files.empty_dirs":
                 session.rmdir(finding.path)
             else:
@@ -65,7 +66,7 @@ def apply_check(result: CheckResult, session: Session, skip_groups: set[str] | N
 
     to_stage: list[Finding] = [f for f in chosen if f.mode == "review"]
     if to_stage:
-        progress(f"Переношу {len(to_stage)} объектов в «Ready for approval»…")
+        progress(tr("Переношу {count} в «Ready for approval»…", count=plural(len(to_stage), "объект", "объекта", "объектов")))
         out.batches, errors = review.stage(to_stage, session)
         out.errors += errors
         out.staged = sum(len(b.entries) for b in out.batches)

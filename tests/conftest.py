@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from filecleaner import config, review  # noqa: E402
+from filecleaner import config, i18n, review  # noqa: E402
 from filecleaner.rules import Rules  # noqa: E402
 
 OLD = time.time() - 40 * 86400  # «давно»: старше всех порогов свежести
@@ -49,4 +49,13 @@ def rules(tmp_path):
     r.data["links"]["update_office_recent"] = False
     r.data["links"]["update_shortcuts"] = False
     r.data["ai"]["enabled"] = False
+    r.data["ui"]["language"] = "ru"
     return r
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """Тесты по умолчанию — на русском, как исходные фразы; язык не протекает между тестами."""
+    i18n.set_language("ru")
+    yield
+    i18n.set_language("ru")

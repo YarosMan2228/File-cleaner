@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import config
+from .i18n import tr
 from .fsutil import (
     PartialMoveError, long_path, move_path, path_is_link, remove_file, remove_tree, unique_path,
 )
@@ -133,19 +134,21 @@ class SessionInfo:
         staged = self.ops("stage")
         deleted = self.ops("delete")
         if staged:
-            parts.append(f"на проверку {plural(len(staged), 'объект', 'объекта', 'объектов')}")
+            parts.append(tr("на проверку {count}", count=plural(len(staged), "объект", "объекта", "объектов")))
         if moved:
-            parts.append(f"перенесено {plural(len(moved), 'объект', 'объекта', 'объектов')}")
+            parts.append(tr("перенесено {count}", count=plural(len(moved), "объект", "объекта", "объектов")))
         if deleted:
             size = sum(e.get("size", 0) for e in deleted)
-            parts.append(f"удалено {plural(len(deleted), 'объект', 'объекта', 'объектов')} ({human_size(size)})")
+            parts.append(tr("удалено {count} ({size})", count=plural(len(deleted), "объект", "объекта", "объектов"),
+                             size=human_size(size)))
         links = self.ops("link")
         if links:
-            parts.append(f"ссылок {len(links)}")
+            parts.append(tr("ссылок {count}", count=len(links)))
         compressed = self.ops("compress")
         if compressed:
-            parts.append(f"сжато {sum(len(e.get('paths', [])) for e in compressed)} файлов")
-        return ", ".join(parts) or "без изменений"
+            parts.append(tr("сжато {files}", files=plural(sum(len(e.get("paths", [])) for e in compressed),
+                                                 "файл", "файла", "файлов")))
+        return ", ".join(parts) or tr("без изменений")
 
     def mark(self, kind: str) -> None:
         with open(self.path, "a", encoding="utf-8") as fh:

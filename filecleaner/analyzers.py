@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import config
+from .i18n import tr
 from .fsutil import (
     age_days, display, find_empty_dirs, human_size, is_under, keyword_match, key_of, list_dir,
     long_path, name_tokens, old_dirs, plural, walk,
@@ -94,9 +95,9 @@ def system_junk(rules: Rules, now: float, progress: Progress = _quiet) -> tuple[
             if not folder.is_dir():
                 continue
             if list_dir(str(folder)) is None:
-                notes.append(f"Нет доступа к {folder} — запусти программу от имени администратора, чтобы почистить.")
+                notes.append(tr("Нет доступа к {folder} — запусти программу от имени администратора, чтобы почистить.", folder=folder))
                 continue
-            progress(f"Проверяю {group.lower()}: {display(folder)}")
+            progress(tr("Проверяю {what}: {folder}", what=group.lower(), folder=display(folder)))
             for path, size in _cache_files(folder, min_age, now):
                 key = os.path.normcase(str(path))
                 if key not in seen:
@@ -104,13 +105,13 @@ def system_junk(rules: Rules, now: float, progress: Progress = _quiet) -> tuple[
                     findings.append(Finding(rule, group, path, size, mode, reason))
 
     temp_age = float(rules.get("junk.temp_min_age_days", 2))
-    add("junk.temp", "Временные файлы Windows", config.TEMP_DIRS,
-        f"временный файл, не менялся больше {temp_age:g} дн.", temp_age)
+    add("junk.temp", tr("Временные файлы Windows"), config.TEMP_DIRS,
+        tr("временный файл, не менялся больше {days} дн.", days=f"{temp_age:g}"), temp_age)
     if rules.mode("junk.temp") == "delete":
         for folder in config.TEMP_DIRS:
             if folder.is_dir():
                 prune += old_dirs(folder, temp_age, now)
-    add("junk.crash_dumps", "Отчёты о сбоях", config.CRASH_DIRS, "дамп или отчёт о сбое программы")
+    add("junk.crash_dumps", tr("Отчёты о сбоях"), config.CRASH_DIRS, tr("дамп или отчёт о сбое программы"))
 
     browser_mode = rules.mode("junk.browser_cache")
     for name, process, user_data, extra in config.BROWSERS:
@@ -118,36 +119,38 @@ def system_junk(rules: Rules, now: float, progress: Progress = _quiet) -> tuple[
         if not dirs or browser_mode == "off":
             continue
         if process in running:
-            notes.append(f"{name} запущен — закрой его, чтобы почистить кэш.")
+            notes.append(tr("{name} запущен — закрой его, чтобы почистить кэш.", name=name))
             continue
-        add("junk.browser_cache", "Кэш браузеров", dirs, f"кэш {name}: страницы и картинки, скачаются заново")
+        add("junk.browser_cache", tr("Кэш браузеров"), dirs, tr("кэш {name}: страницы и картинки, скачаются заново", name=name))
     if config.FIREFOX_PROFILES.is_dir() and browser_mode != "off":
         if "firefox.exe" in running:
-            notes.append("Firefox запущен — закрой его, чтобы почистить кэш.")
+            notes.append(tr("{name} запущен — закрой его, чтобы почистить кэш.", name="Firefox"))
         else:
             profiles = [p / "cache2" for p in config.FIREFOX_PROFILES.iterdir() if (p / "cache2").is_dir()]
-            add("junk.browser_cache", "Кэш браузеров", profiles, "кэш Firefox: страницы и картинки, скачаются заново")
+            add("junk.browser_cache", tr("Кэш браузеров"), profiles,
+                tr("кэш {name}: страницы и картинки, скачаются заново", name="Firefox"))
 
     for name, process, dirs in config.APP_CACHES:
         existing = [d for d in dirs if d.is_dir()]
         if not existing or rules.mode("junk.app_cache") == "off":
             continue
         if process in running:
-            notes.append(f"{name} запущен — закрой его, чтобы почистить кэш.")
+            notes.append(tr("{name} запущен — закрой его, чтобы почистить кэш.", name=name))
             continue
-        add("junk.app_cache", "Кэш приложений", existing, f"кэш {name}, создастся заново")
+        add("junk.app_cache", tr("Кэш приложений"), existing, tr("кэш {name}, создастся заново", name=name))
 
     for name, folder in config.DEV_CACHES:
-        add("junk.dev_cache", "Кэш разработки", [folder], f"кэш {name}: пакеты скачаются заново при установке")
-    add("junk.shader_cache", "Кэш шейдеров видеокарты", config.SHADER_CACHES,
-        "кэш шейдеров: игры соберут его заново (первый запуск может подтормаживать)")
+        add("junk.dev_cache", tr("Кэш разработки"), [folder],
+            tr("кэш {name}: пакеты скачаются заново при установке", name=name))
+    add("junk.shader_cache", tr("Кэш шейдеров видеокарты"), config.SHADER_CACHES,
+        tr("кэш шейдеров: игры соберут его заново (первый запуск может подтормаживать)"))
 
     bin_mode = rules.mode("junk.recycle_bin")
     if bin_mode != "off":
         size, items = recycle_bin_info()
         if items:
-            findings.append(Finding("junk.recycle_bin", "Корзина Windows", RECYCLE_BIN, size, bin_mode,
-                                    f"{plural(items, 'объект', 'объекта', 'объектов')} в Корзине",
+            findings.append(Finding("junk.recycle_bin", tr("Корзина Windows"), RECYCLE_BIN, size, bin_mode,
+                                    tr("{count} в Корзине", count=plural(items, "объект", "объекта", "объектов")),
                                     count=items))
     return findings, notes, prune
 
@@ -166,21 +169,21 @@ def user_junk(recs: list[FileRec], rules: Rules, now: float) -> list[Finding]:
         age = age_days(rec.mtime, now)
         force_report = False
         if low in ("thumbs.db", "ehthumbs.db", ".ds_store") or (low.startswith("._") and rec.size <= 4096):
-            rule, group, reason = "files.thumbs", "Служебные файлы", "миниатюры/служебный файл, система создаст заново"
+            rule, group, reason = "files.thumbs", tr("Служебные файлы"), tr("миниатюры/служебный файл, система создаст заново")
         elif low.startswith("~$") and rec.size < 8192 and age >= 1:
-            rule, group, reason = "files.office_locks", "Временные файлы Office", "остался от закрытого документа Office"
+            rule, group, reason = "files.office_locks", tr("Временные файлы Office"), tr("остался от закрытого документа Office")
         elif rec.ext == "tmp" and age >= 1:
-            rule, group = "files.office_locks", "Временные файлы (.tmp)"
+            rule, group = "files.office_locks", tr("Временные файлы (.tmp)")
             inner = config.EXT_TO_TYPE.get(Path(rec.path.stem).suffix.lower().lstrip("."))
             if inner in _MEDIA_TYPES or rec.size >= 1024 * 1024:
                 # «video123.mp4.tmp» от Zoom и т.п. — может быть единственной копией незаконченной записи.
                 force_report = True
-                reason = "похоже на незавершённую запись или конвертацию — возможно, это единственная копия"
+                reason = tr("похоже на незавершённую запись или конвертацию — возможно, это единственная копия")
             else:
-                reason = f"временный .tmp, не менялся {age:.0f} дн."
+                reason = tr("временный .tmp, не менялся {days} дн.", days=f"{age:.0f}")
         elif rec.ext in config.PARTIAL_EXTS and age >= partial_age:
-            rule, group, reason = ("files.partial_downloads", "Недокачанные файлы",
-                                   f"загрузка не завершилась, файл не менялся {age:.0f} дн.")
+            rule, group, reason = ("files.partial_downloads", tr("Недокачанные файлы"),
+                                   tr("загрузка не завершилась, файл не менялся {days} дн.", days=f"{age:.0f}"))
         else:
             continue
         mode = rules.mode(rule)
@@ -209,7 +212,7 @@ def empty_dirs(roots: dict[str, Path], rules: Rules, now: float) -> list[Finding
         for folder in found:
             top = os.path.join(root_key, key_of(folder)[len(root_key):].lstrip("\\/").split(os.sep)[0])
             if top in empty:
-                out.append(Finding("files.empty_dirs", "Пустые папки", folder, 0, mode, "пустая папка",
+                out.append(Finding("files.empty_dirs", tr("Пустые папки"), folder, 0, mode, tr("пустая папка"),
                                    is_dir=True, count=0))
     return out
 
@@ -379,8 +382,9 @@ def _duplicate_folders(index: Index, recs: list[FileRec], roots: dict[str, Path]
             if folder_mode == "off":
                 continue
             findings.append(Finding(
-                rule, "Дубликаты - папки целиком" if obvious else "Дубликаты - в разных папках", folder, total,
-                folder_mode, f"точно такая же папка: {display(keeper)} ({plural(count, 'файл', 'файла', 'файлов')})",
+                rule, tr("Дубликаты - папки целиком") if obvious else tr("Дубликаты - в разных папках"), folder, total,
+                folder_mode, tr("точно такая же папка: {folder} ({files})", folder=display(keeper),
+                                files=plural(count, "файл", "файла", "файлов")),
                 is_dir=True, original=keeper, count=count,
             ))
             removed.append(folder)
@@ -417,17 +421,17 @@ def duplicates(index: Index, recs: list[FileRec], roots: dict[str, Path], rules:
             if rec is keeper:
                 continue
             if os.path.normcase(str(rec.path.parent)) == os.path.normcase(str(keeper.path.parent)):
-                rule, group_name = "duplicates.same_folder", "Дубликаты - рядом с оригиналом"
-                reason = f"рядом лежит такой же файл: {keeper.name}"
+                rule, group_name = "duplicates.same_folder", tr("Дубликаты - рядом с оригиналом")
+                reason = tr("рядом лежит такой же файл: {name}", name=keeper.name)
             elif looks_like_copy(rec.path.stem):
-                rule, group_name = "duplicates.copy_names", "Дубликаты - имя-копия"
-                reason = f"имя похоже на копию, оригинал: {display(keeper.path)}"
+                rule, group_name = "duplicates.copy_names", tr("Дубликаты - имя-копия")
+                reason = tr("имя похоже на копию, оригинал: {original}", original=display(keeper.path))
             elif _loose(rec.path, dump):
-                rule, group_name = "duplicates.in_downloads", "Дубликаты - лишние в Загрузках"
-                reason = f"оригинал лежит в {display(keeper.path)}"
+                rule, group_name = "duplicates.in_downloads", tr("Дубликаты - лишние в Загрузках")
+                reason = tr("оригинал лежит в {original}", original=display(keeper.path))
             else:
-                rule, group_name = "duplicates.other", "Дубликаты - в разных папках"
-                reason = f"такой же файл: {display(keeper.path)} — возможно, копия нужна тут специально"
+                rule, group_name = "duplicates.other", tr("Дубликаты - в разных папках")
+                reason = tr("такой же файл: {original} — возможно, копия нужна тут специально", original=display(keeper.path))
             mode = rules.mode(rule)
             if mode != "off":
                 findings.append(Finding(rule, group_name, rec.path, rec.size, mode, reason, original=keeper.path))
@@ -485,13 +489,14 @@ def extracted_archives(recs: list[FileRec], rules: Rules) -> list[Finding]:
             if ratio is None or ratio < 0.3:
                 continue
             if ratio < 0.95:
-                out.append(Finding("archives.extracted", "Распакованные архивы", rec.path, rec.size, "report",
-                                   f"распакован частично ({ratio:.0%} файлов) в «{folder.name}»", original=folder))
+                out.append(Finding("archives.extracted", tr("Распакованные архивы"), rec.path, rec.size, "report",
+                                   tr("распакован частично ({share} файлов) в «{folder}»", share=f"{ratio:.0%}",
+                                      folder=folder.name), original=folder))
                 continue
-            reason = f"уже распакован в «{folder.name}» — все файлы на месте"
+            reason = tr("уже распакован в «{folder}» — все файлы на месте", folder=folder.name)
         else:
-            reason = f"рядом папка «{folder.name}» — похоже, архив распакован (содержимое не проверял)"
-        out.append(Finding("archives.extracted", "Распакованные архивы", rec.path, rec.size, mode, reason,
+            reason = tr("рядом папка «{folder}» — похоже, архив распакован (содержимое не проверял)", folder=folder.name)
+        out.append(Finding("archives.extracted", tr("Распакованные архивы"), rec.path, rec.size, mode, reason,
                            original=folder))
     return out
 
@@ -553,17 +558,17 @@ def installers(recs: list[FileRec], rules: Rules, dump: set[str]) -> list[Findin
     for rec in candidates:
         tokens = product_tokens(_base_stem(rec.path.stem))
         if rec.key in old and modes["old_versions"] != "off":
-            out.append(Finding("installers.old_versions", "Установщики - старые версии", rec.path, rec.size,
-                               modes["old_versions"], f"есть более новый: {old[rec.key].name}",
+            out.append(Finding("installers.old_versions", tr("Установщики - старые версии"), rec.path, rec.size,
+                               modes["old_versions"], tr("есть более новый: {name}", name=old[rec.key].name),
                                original=old[rec.key].path))
             continue
         match = next((name for name, words in programs if tokens and set(tokens) <= words), None)
         if match and modes["installed"] != "off":
-            out.append(Finding("installers.installed", "Установщики - программа уже стоит", rec.path, rec.size,
-                               modes["installed"], f"программа уже установлена: {match}"))
+            out.append(Finding("installers.installed", tr("Установщики - программа уже стоит"), rec.path, rec.size,
+                               modes["installed"], tr("программа уже установлена: {program}", program=match)))
         elif modes["other"] != "off":
-            out.append(Finding("installers.other", "Установщики - остальные", rec.path, rec.size, modes["other"],
-                               "установщик; среди установленных программ не нашёл — возможно, ещё нужен"))
+            out.append(Finding("installers.other", tr("Установщики - остальные"), rec.path, rec.size, modes["other"],
+                               tr("установщик; среди установленных программ не нашёл — возможно, ещё нужен")))
     return out
 
 
@@ -580,11 +585,11 @@ def vm_disks(recs: list[FileRec], rules: Rules) -> list[Finding]:
     for rec in recs:
         if rec.ext != "vdi" or rec.cloud or os.path.normcase(str(rec.path)) in registered:
             continue
-        reason = "диск VirtualBox не подключён ни к одной виртуалке"
+        reason = tr("диск VirtualBox не подключён ни к одной виртуалке")
         twin = names.get(rec.name.lower())
         if twin:
-            reason += f"; подключён другой диск с таким же именем: {twin}"
-        out.append(Finding("vm_disks.unregistered", "Неподключённые диски виртуалок", rec.path, rec.size, mode, reason))
+            reason += tr("; подключён другой диск с таким же именем: {twin}", twin=twin)
+        out.append(Finding("vm_disks.unregistered", tr("Неподключённые диски виртуалок"), rec.path, rec.size, mode, reason))
     return out
 
 
@@ -602,9 +607,9 @@ def old_files(recs: list[FileRec], rules: Rules, now: float, taken: set[str]) ->
         age = age_days(rec.mtime, now)
         if age >= min_age:
             years = age / 365
-            when = f"{years:.1f} г." if years >= 1 else f"{age:.0f} дн."
-            out.append(Finding("old_files", "Старые большие файлы", rec.path, rec.size, mode,
-                               f"не менялся {when} — возраст ≠ ненужность, реши сам (или перенеси в архив)"))
+            when = tr("{n} г.", n=f"{years:.1f}") if years >= 1 else tr("{n} дн.", n=f"{age:.0f}")
+            out.append(Finding("old_files", tr("Старые большие файлы"), rec.path, rec.size, mode,
+                               tr("не менялся {when} — возраст ≠ ненужность, реши сам (или перенеси в архив)", when=when)))
     return out
 
 
@@ -659,7 +664,7 @@ def apply_protection(findings: list[Finding], rules: Rules) -> None:
         hit = protected_by(finding.path)
         if hit:
             finding.mode = "report"
-            finding.reason += f" — защищено правилом «{hit}»"
+            finding.reason += tr(" — защищено правилом «{rule}»", rule=hit)
 
 
 def run_check(index: Index, roots: dict[str, Path], rules: Rules, progress: Progress = _quiet,
@@ -670,11 +675,11 @@ def run_check(index: Index, roots: dict[str, Path], rules: Rules, progress: Prog
     dump = dump_dirs(roots, rules)
 
     findings, notes, prune = system_junk(rules, now, progress)
-    progress("Ищу хлам среди файлов…")
+    progress(tr("Ищу хлам среди файлов…"))
     findings += user_junk(recs, rules, now)
     findings += empty_dirs(roots, rules, now)
     findings += duplicates(index, recs, roots, rules, dump, progress)
-    progress("Проверяю архивы, установщики и диски виртуалок…")
+    progress(tr("Проверяю архивы, установщики и диски виртуалок…"))
     findings += extracted_archives(recs, rules)
     findings += installers(recs, rules, dump)
     findings += vm_disks(recs, rules)

@@ -8,9 +8,10 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from . import __version__, analyzers, compress, config, fsutil, journal, night, organizer, pipeline, report, review
+from . import __version__, analyzers, compress, config, fsutil, i18n, journal, night, organizer, pipeline, report, review
 from .ai import LocalAI
 from .fsutil import display, human_size, plural
+from .i18n import tr
 from .index import Index
 from .rules import Rules, RulesError, ensure_user_rules
 
@@ -272,7 +273,7 @@ def cmd_check(args, rules: Rules, interactive: bool = False) -> int:
         print("Отменено, ничего не тронуто.")
         return 0
 
-    with journal.Session("check", "Проверка") as session:
+    with journal.Session("check", tr("Проверка")) as session:
         out = pipeline.apply_check(result, session, skip, progress)
     progress.clear()
     if out.deleted:
@@ -337,7 +338,7 @@ def cmd_approve(args, rules: Rules, interactive: bool = False) -> int:
         if not args.yes and not confirm("  Выполнить? Удаление нельзя отменить"):
             print("  Пропущено.")
             continue
-        with journal.Session("approve", f"Утверждение: {batch.name}") as session:
+        with journal.Session("approve", tr("Утверждение: {name}", name=batch.name)) as session:
             result = review.approve(batch, session)
         print(green(f"  Удалено {objects(result.deleted)}, освобождено {human_size(result.freed)}."))
         if result.restored:
@@ -439,7 +440,7 @@ def cmd_sort(args, rules: Rules, interactive: bool = False) -> int:
     if not getattr(args, "yes", False) and not confirm("Разложить?"):
         print("Отменено, ничего не тронуто.")
         return 0
-    with journal.Session("sort", f"Сортировка {folder.name}") as session:
+    with journal.Session("sort", tr("Сортировка {folder}", folder=folder.name)) as session:
         result = organizer.apply_sort(plan, rules, session, progress)
     progress.clear()
     print(green(f"Разложено: {objects(result.moved)}."))
@@ -500,7 +501,7 @@ def cmd_compress(args, rules: Rules, interactive: bool = False) -> int:
         return 0
     if not getattr(args, "yes", False) and not confirm("Сжать?"):
         return 0
-    with journal.Session("compress", f"Сжатие {folder.name}") as session:
+    with journal.Session("compress", tr("Сжатие {folder}", folder=folder.name)) as session:
         result = compress.apply_compress(plan, rules, session, progress)
     progress.clear()
     print(green(f"Сжато {files(result.files)}: было {human_size(result.before)}, стало {human_size(result.after)} — "
@@ -790,6 +791,7 @@ def main(argv: list[str] | None = None) -> int:
             return 130
     try:
         rules = Rules.load(Path(args.rules) if args.rules else None)
+        i18n.set_language(i18n.resolve(rules.get("ui.language", "auto")))
     except RulesError as exc:
         print(red(str(exc)))
         return 2

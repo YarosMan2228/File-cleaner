@@ -29,6 +29,7 @@ from . import analyzers, config, journal, organizer, pipeline, report
 from .ai import LocalAI
 from .analyzers import CheckResult, Finding
 from .fsutil import display, human_size, is_under, key_of, long_path, walk
+from .i18n import tr
 from .index import Index
 from .rules import Rules
 from .winutil import fixed_drives, go_to_sleep, keep_awake, shut_down
@@ -96,7 +97,7 @@ def guard_system_drive(findings: list[Finding]) -> None:
             continue
         if _outside_home_on_system_drive(finding.path):
             finding.mode = "report"
-            finding.reason += " — на системном диске вне твоей папки: только отчёт"
+            finding.reason += tr(" — на системном диске вне твоей папки: только отчёт")
 
 
 def _is_verified_zip(finding: Finding) -> bool:
@@ -119,13 +120,13 @@ def split(findings: list[Finding], dumps: list[Path], auto_delete: bool = True
         """None — оригинал остаётся на месте (сам или его содержимое в распакованной папке)."""
         original = finding.original
         if original is None or not os.path.lexists(long_path(original)):
-            return "оригинала нет на месте"
+            return tr("оригинала нет на месте")
         other = gone(key_of(original))
         if other is None:
             return None
         if _is_verified_zip(other) and other.original is not None and gone(key_of(other.original)) is None:
             return None  # оригинал — распакованный zip, его содержимое остаётся в папке
-        return "оригинал тоже на удаление"
+        return tr("оригинал тоже на удаление")
 
     auto: list[Finding] = []
     morning: list[Finding] = []
@@ -140,9 +141,9 @@ def split(findings: list[Finding], dumps: list[Path], auto_delete: bool = True
             morning.append(finding)  # копии вне свалок — рабочие папки: решаешь утром
             continue
         if finding.rule == "archives.extracted" and not _is_verified_zip(finding):
-            held.append((finding, "архив не zip — его содержимое не сверить"))
+            held.append((finding, tr("архив не zip — его содержимое не сверить")))
         elif key_of(finding.path) in referenced and finding.rule != "archives.extracted":
-            held.append((finding, "это оригинал для другой копии"))
+            held.append((finding, tr("это оригинал для другой копии")))
         elif (why := original_survives(finding)) is not None:
             held.append((finding, why))
         else:
@@ -229,14 +230,14 @@ def verify_all(plan: NightPlan, progress: Log = _quiet) -> list[Finding]:
     verified_keys: set[str] = set()
     for group in (first, chained):
         for i, finding in enumerate(group, 1):
-            progress(f"Сверяю с оригиналом {i}/{len(group)}: {finding.path.name}")
+            progress(tr("Сверяю с оригиналом {i}/{total}: {name}", i=i, total=len(group), name=finding.path.name))
             if group is chained and key_of(finding.original) not in verified_keys:
-                plan.held.append((finding, "оригинал — архив, который не прошёл сверку"))
+                plan.held.append((finding, tr("оригинал — архив, который не прошёл сверку")))
             elif verify(finding):
                 verified.append(finding)
                 verified_keys.add(key_of(finding.path))
             else:
-                plan.held.append((finding, "при сверке содержимое не совпало с оригиналом"))
+                plan.held.append((finding, tr("при сверке содержимое не совпало с оригиналом")))
     return verified
 
 
@@ -268,7 +269,7 @@ def run_night(rules: Rules, log: Log = print, progress: Log = _quiet) -> NightRe
     finally:
         keep_awake(False)
         out.finished = datetime.now()
-        out.report = report.save("ночь", render(out, rules))
+        out.report = report.save(tr("ночь"), render(out, rules))
         _save_last(out)
     return out
 
@@ -289,9 +290,9 @@ def _stage(title: str, log: Log, out: NightResult, action: Callable[[], None]) -
 def _run(rules: Rules, out: NightResult, log: Log, progress: Log) -> None:
     ai = LocalAI(rules)
     if ai.enabled and not ai.local:
-        out.notes.append(f"ИИ выключен: адрес модели {ai.url} не на этом компьютере — файлы в сеть не отправляю.")
+        out.notes.append(tr("ИИ выключен: адрес модели {url} не на этом компьютере — файлы в сеть не отправляю.", url=ai.url))
     elif ai.enabled and not ai.available():
-        out.notes.append(f"ИИ недоступен (запущен ли Ollama? модель {ai.model}) — раскладываю по правилам.")
+        out.notes.append(tr("ИИ недоступен (запущен ли Ollama? модель {model}) — раскладываю по правилам.", model=ai.model))
     rules.data.setdefault("ai", {})["max_items"] = int(rules.get("night.ai_max_items", 2000))
 
     state: dict = {}
@@ -300,14 +301,14 @@ def _run(rules: Rules, out: NightResult, log: Log, progress: Log) -> None:
         plan = plan_night(rules, progress)
         state["plan"] = plan
         out.notes += plan.check.notes
-        log(f"   найдено: удалить сразу {len(plan.auto)}, до утра {len(plan.morning) + len(plan.held)}, "
-            f"кэши {len(plan.check.by_mode('delete'))}")
+        log(tr("   найдено: удалить сразу {auto}, до утра {waiting}, кэши {junk}", auto=len(plan.auto),
+               waiting=len(plan.morning) + len(plan.held), junk=len(plan.check.by_mode("delete"))))
 
     def delete_verified() -> None:
         plan: NightPlan = state["plan"]
         verified = verify_all(plan, progress)
-        log(f"   сверено с оригиналами: {len(verified)} из {len(plan.auto)}")
-        with journal.Session("night", "Ночь: проверенные копии") as session:
+        log(tr("   сверено с оригиналами: {done} из {total}", done=len(verified), total=len(plan.auto)))
+        with journal.Session("night", tr("Ночь: проверенные копии")) as session:
             for finding in verified:
                 try:
                     session.delete(finding.path, finding.size, is_dir=finding.is_dir, rule=finding.rule,
@@ -317,49 +318,50 @@ def _run(rules: Rules, out: NightResult, log: Log, progress: Log) -> None:
                 except OSError as exc:
                     out.errors.append(f"{display(finding.path)}: {exc.strerror or exc}")
         out.held = plan.held
-        log(f"   удалено проверенных копий: {len(out.auto_deleted)} ({human_size(out.auto_freed)})")
+        log(tr("   удалено проверенных копий: {count} ({size})", count=len(out.auto_deleted), size=human_size(out.auto_freed)))
 
     def junk_and_morning() -> None:
         plan: NightPlan = state["plan"]
         findings = plan.check.by_mode("delete") + plan.morning + [f for f, _ in plan.held]
         result = CheckResult(findings, plan.check.notes, plan.check.prune_dirs)
-        with journal.Session("check", "Ночь: проверка") as session:
+        with journal.Session("check", tr("Ночь: проверка")) as session:
             applied = pipeline.apply_check(result, session, progress=progress)
         out.junk_deleted, out.junk_freed = applied.deleted, applied.freed
         out.batches = applied.batches
         out.waiting, out.waiting_bytes = applied.staged, applied.staged_bytes
         out.errors += applied.errors
         if applied.busy:
-            out.notes.append(f"{applied.busy} временных файлов и кэшей заняты программами "
-                             f"или требуют прав администратора — пропущены.")
-        log(f"   кэши: {applied.deleted} ({human_size(applied.freed)}); до утра: {applied.staged} "
-            f"({human_size(applied.staged_bytes)})")
+            out.notes.append(tr("{count} временных файлов и кэшей заняты программами "
+                                "или требуют прав администратора — пропущены.", count=applied.busy))
+        log(tr("   кэши: {junk} ({junk_size}); до утра: {waiting} ({waiting_size})", junk=applied.deleted,
+               junk_size=human_size(applied.freed), waiting=applied.staged, waiting_size=human_size(applied.staged_bytes)))
 
     def sort_all() -> None:
         plan: NightPlan | None = state.get("plan")
         dumps = plan.dumps if plan else analyzers.dump_folders(rules.roots(), rules)
         folders = plan.sort_folders if plan else sort_folders(rules.roots(), rules, dumps)
         for folder, with_subfolders in folders:
-            log(f"   раскладываю {display(folder)}{'' if with_subfolders else ' (только файлы)'}")
+            log(tr("   раскладываю {folder}", folder=display(folder)) + ("" if with_subfolders else tr(" (только файлы)")))
             sort_plan = organizer.plan_sort(folder, rules, progress, move_folders=with_subfolders)
             if not sort_plan.moves:
-                reason = next(iter(sort_plan.skipped), "") if sort_plan.skipped else "всё уже разложено"
+                reason = next(iter(sort_plan.skipped), "") if sort_plan.skipped else tr("всё уже разложено")
                 out.sort_skipped.append((folder, reason))
                 continue
-            with journal.Session("sort", f"Ночь: сортировка {folder.name}") as session:
+            with journal.Session("sort", tr("Ночь: сортировка {folder}", folder=folder.name)) as session:
                 result = organizer.apply_sort(sort_plan, rules, session, progress)
             out.sorted.append((folder, sort_plan.moves, result))
             out.errors += result.errors
             if result.duplicates_staged:
-                out.notes.append(f"{display(folder)}: {result.duplicates_staged} копий, найденных при сортировке, "
-                                 f"ждут утра в «{config.REVIEW_DIR_NAME}»")
-            log(f"      разложено: {result.moved}")
+                out.notes.append(tr("{folder}: {count} копий, найденных при сортировке, ждут утра в «{review}»",
+                                    folder=display(folder), count=result.duplicates_staged,
+                                    review=config.REVIEW_DIR_NAME))
+            log(tr("      разложено: {count}", count=result.moved))
 
-    _stage("Ищу мусор и копии на всех дисках…", log, out, check)
+    _stage(tr("Ищу мусор и копии на всех дисках…"), log, out, check)
     if "plan" in state:
-        _stage("Сверяю и удаляю проверенные копии…", log, out, delete_verified)
-        _stage("Удаляю кэши, остальное — в «Ready for approval»…", log, out, junk_and_morning)
-    _stage("Раскладываю файлы…", log, out, sort_all)
+        _stage(tr("Сверяю и удаляю проверенные копии…"), log, out, delete_verified)
+        _stage(tr("Удаляю кэши, остальное — в «Ready for approval»…"), log, out, junk_and_morning)
+    _stage(tr("Раскладываю файлы…"), log, out, sort_all)
 
 
 # ======================================================================= после
@@ -367,17 +369,17 @@ def after(action: str, log: Log = print, delay: int = 60) -> None:
     """Сон или выключение через delay секунд (Ctrl+C — отменить)."""
     if action not in ("sleep", "shutdown"):
         return
-    word = "усыплю" if action == "sleep" else "выключу"
     try:
         for left in range(delay, 0, -10):
-            log(f"Через {left} с {word} компьютер (Ctrl+C — отменить)…")
+            log(tr("Через {left} с усыплю компьютер (Ctrl+C — отменить)…", left=left) if action == "sleep"
+                else tr("Через {left} с выключу компьютер (Ctrl+C — отменить)…", left=left))
             time.sleep(min(10, left))
     except KeyboardInterrupt:
-        log("Отменено — компьютер остаётся включённым.")
+        log(tr("Отменено — компьютер остаётся включённым."))
         return
     ok = go_to_sleep() if action == "sleep" else shut_down()
     if not ok:
-        log(f"Windows не дала {'усыпить' if action == 'sleep' else 'выключить'} компьютер.")
+        log(tr("Windows не дала усыпить компьютер.") if action == "sleep" else tr("Windows не дала выключить компьютер."))
 
 
 def _save_last(out: NightResult) -> None:
@@ -407,43 +409,44 @@ def render(out: NightResult, rules: Rules) -> str:
     moved = sum(r.moved for _, _, r in out.sorted)
     sections = [
         report.Section(
-            f"Удалено сразу: проверенные копии — {human_size(out.auto_freed)}",
-            ["Что", "Размер", "Почему", "Что осталось"],
+            tr("Удалено сразу: проверенные копии — {size}", size=human_size(out.auto_freed)),
+            [tr("Что"), tr("Размер"), tr("Почему"), tr("Что осталось")],
             [[display(f.path), human_size(f.size), f.reason, display(f.original or "")]
              for f in sorted(out.auto_deleted, key=lambda f: -f.size)],
-            note=f"{len(out.auto_deleted)} шт. — содержимое сверено с оригиналом перед удалением", open=True,
+            note=tr("{count} шт. — содержимое сверено с оригиналом перед удалением", count=len(out.auto_deleted)), open=True,
         ),
         report.Section(
-            f"Ждёт утра — «{config.REVIEW_DIR_NAME}»: {human_size(out.waiting_bytes)}",
-            ["Папка", "Объектов", "Размер"],
+            tr("Ждёт утра — «{review}»: {size}", review=config.REVIEW_DIR_NAME, size=human_size(out.waiting_bytes)),
+            [tr("Папка"), tr("Объектов"), tr("Размер")],
             [[str(b.path), str(len(b.entries)), human_size(sum(e['size'] for e in b.entries))] for b in out.batches],
-            note="загляни, нужное перетащи в «_ВЕРНУТЬ», потом «Утвердить удаление»", open=True,
+            note=tr("реши в окне программы: «На решение» — удалить или вернуть на место"), open=True,
         ),
         report.Section(
-            "Хотел удалить сразу, но оставил до утра",
-            ["Что", "Размер", "Почему не сразу"],
+            tr("Хотел удалить сразу, но оставил до утра"),
+            [tr("Что"), tr("Размер"), tr("Почему не сразу")],
             [[display(f.path), human_size(f.size), why] for f, why in out.held],
-            note=f"{len(out.held)} шт.",
+            note=tr("{count} шт.", count=len(out.held)),
         ),
     ]
     for folder, moves, result in out.sorted:
         sections.append(report.Section(
-            f"Разложено: {display(folder)} — {result.moved}",
-            ["Откуда", "Куда", "Почему"], [[display(m.src), display(m.dst), m.reason] for m in moves],
-            note="«Отменить действие» вернёт всё как было",
+            tr("Разложено: {folder} — {count}", folder=display(folder), count=result.moved),
+            [tr("Откуда"), tr("Куда"), tr("Почему")], [[display(m.src), display(m.dst), m.reason] for m in moves],
+            note=tr("«Отменить действие» вернёт всё как было"),
         ))
     if out.sort_skipped:
-        sections.append(report.Section("Не раскладывал", ["Папка", "Почему"],
+        sections.append(report.Section(tr("Не раскладывал"), [tr("Папка"), tr("Почему")],
                                        [[display(p), why] for p, why in out.sort_skipped]))
     if out.notes or out.errors:
-        sections.append(report.Section("Замечания и ошибки", ["", ""],
-                                       [["замечание", n] for n in out.notes] + [["ошибка", e] for e in out.errors],
+        sections.append(report.Section(tr("Замечания и ошибки"), ["", ""],
+                                       [[tr("замечание"), n] for n in out.notes] + [[tr("ошибка"), e] for e in out.errors],
                                        open=bool(out.errors)))
     return report.render(
-        f"Ночь {out.started:%d.%m.%Y}",
-        f"Началось в {out.started:%H:%M}, заняло {minutes // 60} ч {minutes % 60} мин. Всё считалось на этом компьютере.",
-        [("Освобождено", human_size(out.junk_freed + out.auto_freed)), ("Кэши и временное", human_size(out.junk_freed)),
-         ("Проверенные копии", human_size(out.auto_freed)), ("Разложено", str(moved)),
-         ("Ждёт утра", human_size(out.waiting_bytes))],
+        tr("Ночь {date}", date=f"{out.started:%d.%m.%Y}"),
+        tr("Началось в {start}, заняло {hours} ч {minutes} мин. Всё считалось на этом компьютере.",
+           start=f"{out.started:%H:%M}", hours=minutes // 60, minutes=minutes % 60),
+        [(tr("Освобождено"), human_size(out.junk_freed + out.auto_freed)), (tr("Кэши и временное"), human_size(out.junk_freed)),
+         (tr("Проверенные копии"), human_size(out.auto_freed)), (tr("Разложено"), str(moved)),
+         (tr("Ждёт утра"), human_size(out.waiting_bytes))],
         sections,
     )

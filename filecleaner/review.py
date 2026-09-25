@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import config, report
 from .analyzers import Finding
+from .i18n import tr
 from .fsutil import display, human_size, is_under, list_dir, long_path, path_is_link, plural, remove_file
 from .journal import Session
 from .winutil import fixed_drives
@@ -23,18 +24,21 @@ from .winutil import fixed_drives
 MANIFEST = ".manifest.json"
 REPORT = "ОТЧЁТ.html"
 HOWTO = "КАК ПОЛЬЗОВАТЬСЯ.txt"
+# Служебные имена на всех языках: партию, созданную по-русски, можно закрыть и по-английски.
+REPORT_NAMES = (REPORT, "REPORT.html")
+HOWTO_NAMES = (HOWTO, "HOW TO USE.txt")
+RETURN_NAMES = (config.RETURN_DIR_NAME, "_RETURN")
 _BAD_CHARS = str.maketrans({c: "_" for c in '<>:"/\\|?*'})
 
-HOWTO_TEXT = """Здесь лежат файлы, которые программа считает ненужными. Пока ничего не удалено.
-
-1. Открой ОТЧЁТ.html — там для каждого файла написано, откуда он и почему попал сюда.
-2. Что нужно оставить — перетащи в папку «{ret}» (можно целыми папками).
-   Или просто забери файл куда тебе нужно.
-3. Запусти:  filecleaner approve  (или пункт «Утвердить удаление» в меню).
-   Всё из «{ret}» вернётся на прежние места, остальное удалится насовсем.
-
-Передумал целиком? filecleaner undo — всё вернётся на свои места.
-"""
+HOWTO_TEXT = (
+    "Здесь лежат файлы, которые программа считает ненужными. Пока ничего не удалено.\n\n"
+    "Проще всего — открой File Cleaner, вкладка «На решение»: отметь, что удалить, а что вернуть на место.\n\n"
+    "Или вручную:\n"
+    "1. Открой {report} — там для каждого файла написано, откуда он и почему попал сюда.\n"
+    "2. Что нужно оставить — перетащи в папку «{ret}» (можно целыми папками).\n"
+    "3. Запусти:  filecleaner approve — всё из «{ret}» вернётся на прежние места, остальное удалится насовсем.\n\n"
+    "Передумал целиком? filecleaner undo — всё вернётся на свои места.\n"
+)
 
 
 @dataclass
@@ -64,12 +68,13 @@ def anchor(path: Path) -> Path:
 
 
 def _safe(name: str) -> str:
-    return name.translate(_BAD_CHARS).strip() or "Прочее"
+    return name.translate(_BAD_CHARS).strip() or tr("Прочее")
 
 
-def stage(findings: list[Finding], session: Session, title: str = "проверка") -> tuple[list[Batch], list[str]]:
+def stage(findings: list[Finding], session: Session, title: str | None = None) -> tuple[list[Batch], list[str]]:
     """Переносит найденное в «Ready for approval» (на каждом диске — своя папка) и пишет отчёт."""
     stamp = datetime.now()
+    title = title or tr("проверка")
     batches: dict[str, Batch] = {}
     errors: list[str] = []
     for finding in findings:
@@ -101,12 +106,25 @@ def stage(findings: list[Finding], session: Session, title: str = "провер�
     for batch in batches.values():
         if not batch.entries:
             continue
-        (batch.path / config.RETURN_DIR_NAME).mkdir(exist_ok=True)
+        (batch.path / return_dir_name()).mkdir(exist_ok=True)
         write_manifest(batch)
-        (batch.path / HOWTO).write_text(HOWTO_TEXT.format(ret=config.RETURN_DIR_NAME), encoding="utf-8-sig")
-        (batch.path / REPORT).write_text(batch_report(batch), encoding="utf-8")
+        (batch.path / howto_name()).write_text(tr(HOWTO_TEXT, report=report_name(), ret=return_dir_name()),
+                                              encoding="utf-8-sig")
+        (batch.path / report_name()).write_text(batch_report(batch), encoding="utf-8")
         session.record("batch", path=str(batch.path))
     return [b for b in batches.values() if b.entries], errors
+
+
+def report_name() -> str:
+    return tr(REPORT)
+
+
+def howto_name() -> str:
+    return tr(HOWTO)
+
+
+def return_dir_name() -> str:
+    return tr(config.RETURN_DIR_NAME)
 
 
 def write_manifest(batch: Batch) -> None:
@@ -124,25 +142,27 @@ def batch_report(batch: Batch) -> str:
                 for e in sorted(entries, key=lambda e: -e["size"])]
         sections.append(report.Section(
             f"{group} — {human_size(sum(e['size'] for e in entries))}",
-            ["Файл", "Откуда", "Размер", "Почему здесь"], rows, note=plural(len(entries), "объект", "объекта", "объектов"),
+            [tr("Файл"), tr("Откуда"), tr("Размер"), tr("Почему здесь")], rows,
+            note=plural(len(entries), "объект", "объекта", "объектов"),
         ))
     total = sum(e["size"] for e in batch.entries)
     return report.render(
-        f"На проверку: {batch.name}",
-        f"Ничего не удалено. Нужное перетащи в «{config.RETURN_DIR_NAME}», потом запусти «filecleaner approve».",
-        [("Объектов", str(len(batch.entries))), ("Занимают", human_size(total))],
+        tr("На проверку: {name}", name=batch.name),
+        tr("Ничего не удалено. Реши в окне File Cleaner («На решение») или перетащи нужное в «{ret}» "
+           "и запусти «filecleaner approve».", ret=return_dir_name()),
+        [(tr("Объектов"), str(len(batch.entries))), (tr("Занимают"), human_size(total))],
         sections,
     )
 
 
 def remove_batch_files(folder: Path) -> None:
     """Убирает служебные файлы партии (используется при отмене)."""
-    for name in (MANIFEST, REPORT, HOWTO):
+    for name in (MANIFEST, *REPORT_NAMES, *HOWTO_NAMES):
         try:
             remove_file(folder / name)
         except OSError:
             pass
-    for path in (folder / config.RETURN_DIR_NAME, folder):
+    for path in (*(folder / name for name in RETURN_NAMES), folder):
         try:
             os.rmdir(long_path(path))
         except OSError:
@@ -191,7 +211,7 @@ class ApproveResult:
 
 def _match_returned(batch: Batch, taken: set[int]) -> tuple[list[tuple[Path, dict]], list[Path]]:
     """Сопоставляет содержимое «_ВЕРНУТЬ» с записями партии: по имени, пути и размеру."""
-    ret_dir = batch.path / config.RETURN_DIR_NAME
+    ret_dir = next((batch.path / n for n in RETURN_NAMES if (batch.path / n).is_dir()), batch.path / RETURN_NAMES[0])
     matches: list[tuple[Path, dict]] = []
     unmatched: list[Path] = []
 
@@ -238,7 +258,7 @@ def approve(batch: Batch, session: Session) -> ApproveResult:
             final = session.move(item, Path(entry["original"]), op="move", restored=True)
             result.restored.append(display(final))
         except OSError as exc:
-            result.errors.append(f"не вернул {item.name}: {exc.strerror or exc}")
+            result.errors.append(tr("не вернул {name}: {error}", name=item.name, error=exc.strerror or exc))
     result.unmatched = [display(p) for p in unmatched]
 
     failed: list[dict] = []
@@ -255,7 +275,7 @@ def approve(batch: Batch, session: Session) -> ApproveResult:
             result.freed += entry.get("size", 0)
         except OSError as exc:
             failed.append(entry)
-            result.errors.append(f"не удалил {display(staged)}: {exc.strerror or exc}")
+            result.errors.append(tr("не удалил {name}: {error}", name=display(staged), error=exc.strerror or exc))
 
     _cleanup(batch, failed)
     return result
@@ -288,12 +308,12 @@ def resolve(batch: Batch, session: Session, restore: set[str], delete: set[str])
                 result.freed += entry.get("size", 0)
         except OSError as exc:
             waiting.append(entry)
-            verb = "не вернул" if key in restore else "не удалил"
-            result.errors.append(f"{verb} {display(staged)}: {exc.strerror or exc}")
+            template = "не вернул {name}: {error}" if key in restore else "не удалил {name}: {error}"
+            result.errors.append(tr(template, name=display(staged), error=exc.strerror or exc))
     _cleanup(batch, waiting)
     if waiting:  # партия ещё ждёт: отчёт и «_ВЕРНУТЬ» — по оставшемуся
-        (batch.path / config.RETURN_DIR_NAME).mkdir(exist_ok=True)
-        (batch.path / REPORT).write_text(batch_report(batch), encoding="utf-8")
+        (batch.path / return_dir_name()).mkdir(exist_ok=True)
+        (batch.path / report_name()).write_text(batch_report(batch), encoding="utf-8")
     return result
 
 
@@ -313,7 +333,7 @@ def _cleanup(batch: Batch, failed: list[dict]) -> None:
         write_manifest(batch)
         return
     leftovers = [e.name for e in list_dir(str(batch.path)) or []]
-    if any(name not in (MANIFEST, REPORT, HOWTO) for name in leftovers):
+    if any(name not in (MANIFEST, *REPORT_NAMES, *HOWTO_NAMES) for name in leftovers):
         (batch.path / MANIFEST).unlink(missing_ok=True)  # партия закрыта, остались только твои файлы
         return
     remove_batch_files(batch.path)

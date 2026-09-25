@@ -15,6 +15,9 @@
 #  Свою копию правил открывает команда:  filecleaner rules --edit
 # ═══════════════════════════════════════════════════════════════════════
 
+[ui]
+language = "auto"          # язык программы: auto — как в Windows, ru — русский, en — English
+
 [scan]
 # Где искать: desktop, downloads, documents, pictures, music, videos или любые пути ("B:/Архив").
 roots = ["desktop", "downloads", "documents", "pictures", "music", "videos"]

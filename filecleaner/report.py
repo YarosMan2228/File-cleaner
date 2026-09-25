@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import config
+from .i18n import language, tr
 
 MAX_ROWS = 5000
 
@@ -62,13 +63,13 @@ q.addEventListener('input', () => {
 def render(title: str, subtitle: str, cards: list[tuple[str, str]], sections: list[Section]) -> str:
     esc = html.escape
     parts = [
-        "<!doctype html><html lang='ru'><head><meta charset='utf-8'>",
+        f"<!doctype html><html lang='{language()}'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width, initial-scale=1'>",
         f"<title>{esc(title)}</title><style>{_CSS}</style></head><body><main>",
         f"<h1>{esc(title)}</h1><p class='sub'>{esc(subtitle)}</p>",
         "<div class='cards'>",
         *(f"<div class='card'><b>{esc(value)}</b><span>{esc(label)}</span></div>" for label, value in cards),
-        "</div><input id='q' placeholder='Поиск по имени, папке или причине…'>",
+        f"</div><input id='q' placeholder='{esc(tr('Поиск по имени, папке или причине…'))}'>",
     ]
     for section in sections:
         parts.append(f"<details{' open' if section.open else ''}><summary>{esc(section.title)}"
@@ -79,7 +80,7 @@ def render(title: str, subtitle: str, cards: list[tuple[str, str]], sections: li
             parts.append("<tr>" + "".join(f"<td>{esc(str(cell))}</td>" for cell in row) + "</tr>")
         parts.append("</tbody></table></div>")
         if len(section.rows) > MAX_ROWS:
-            parts.append(f"<div class='more'>…и ещё {len(section.rows) - MAX_ROWS} строк</div>")
+            parts.append(f"<div class='more'>{esc(tr('…и ещё {count} строк', count=len(section.rows) - MAX_ROWS))}</div>")
         parts.append("</details>")
     parts.append(f"<script>{_JS}</script></main></body></html>")
     return "".join(parts)

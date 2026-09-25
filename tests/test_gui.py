@@ -133,7 +133,7 @@ def test_only_program_reports_can_be_opened(gui, sandbox):
 
 def test_settings_through_the_window(gui):
     status, current = call(gui, "/api/settings")
-    assert status == 200 and current["sectors"] and "Документы" in current["types"]
+    assert status == 200 and current["sectors"] and "Документы" in [kind["id"] for kind in current["types"]]
     current["ai"]["min_confidence"] = 90
     status, _ = call(gui, "/api/settings", current)
     assert status == 200 and Rules.load().get("ai.min_confidence") == 90    # записано в файл правил

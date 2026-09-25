@@ -18,6 +18,7 @@ from .fsutil import (
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, PartialMoveError, attributes, display, is_cloud_only,
     is_link, key_of, keyword_match, list_dir, long_path, looks_like_program_folder, name_tokens, unique_path, walk,
 )
+from .i18n import all_type_names, tr, type_name
 from .journal import Session
 from .rules import Rules
 from .winutil import read_zone_source
@@ -96,15 +97,15 @@ def match_sector(tokens: list[str], source_domains: list[str], kind: str | None,
             src = source.lower()
             for domain in source_domains:
                 if domain == src or domain.endswith("." + src) or ("." not in src and src in domain):
-                    return sector, f"скачан с {domain}"
+                    return sector, tr("скачан с {domain}", domain=domain)
     for sector in sectors:
         for keyword in sector.get("keywords", []):
             if keyword_match(tokens, keyword):
-                return sector, f"в имени есть «{keyword}»"
+                return sector, tr("в имени есть «{keyword}»", keyword=keyword)
     if kind:
         for sector in sectors:
             if kind in sector.get("types", []):
-                return sector, f"тип «{kind}»"
+                return sector, tr("тип «{kind}»", kind=type_name(kind))
     return None, ""
 
 
@@ -128,7 +129,7 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
     now = now or time.time()
     listing = list_dir(str(folder)) or []
     if looks_like_program_folder({e.name.lower() for e in listing}):
-        return SortPlan(folder, [], Counter({"это папка программы или проекта — не раскладываю": 1}), [])
+        return SortPlan(folder, [], Counter({tr("это папка программы или проекта — не раскладываю"): 1}), [])
     if move_folders is None:
         move_folders = bool(rules.get("sort.move_folders", True))
     sectors = rules.sectors
@@ -141,18 +142,18 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
         if ai_budget <= 0:
             return None, ""
         ai_budget -= 1
-        progress(f"ИИ смотрит: {name}")
+        progress(tr("ИИ смотрит: {name}", name=name))
         sector_name, why = ai.classify(name, sectors, sources, snippet, key, kind)
         sector = next((s for s in sectors if s["name"] == sector_name), None)
-        return sector, f"ИИ: {why or 'по содержимому'}" if sector else ""
+        return sector, tr("ИИ: {why}", why=why or tr("по содержимому")) if sector else ""
 
     min_age = float(rules.get("scan.min_file_age_minutes", 30)) * 60
     by_year = bool(rules.get("sort.by_year", False))
     unknown_to = str(rules.get("sort.unknown_to", "") or "")
     type_targets = rules.get("sort.type_targets", {}) or {}
     reserved = (
-        {name.lower() for name in config.TYPES}
-        | {config.OTHER_TYPE.lower(), config.REVIEW_DIR_NAME.lower(), config.RETURN_DIR_NAME.lower()}
+        all_type_names()  # папки типов на всех языках — сами они не раскладываются
+        | {config.REVIEW_DIR_NAME.lower(), config.RETURN_DIR_NAME.lower(), "_return"}
         | {s["name"].lower() for s in sectors}
         | {str(name).lower() for name in rules.get("sort.keep_folders", []) or []}
     )
@@ -167,22 +168,22 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
     for entry in sorted(listing, key=lambda e: e.name.lower()):
         try:
             if is_link(entry):
-                skipped["ссылки"] += 1
+                skipped[tr("ссылки")] += 1
                 continue
             st = entry.stat(follow_symlinks=False)
             is_dir = entry.is_dir(follow_symlinks=False)
         except OSError:
             continue
         if attributes(st) & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM):
-            skipped["скрытые и системные"] += 1
+            skipped[tr("скрытые и системные")] += 1
             continue
         if protected_by(Path(entry.path)):
-            skipped[PROTECTED] += 1
+            skipped[tr(PROTECTED)] += 1
             continue
         if is_dir:
             if entry.name.lower() in reserved or not move_folders:
                 continue
-            progress(f"Смотрю папку {entry.name}…")
+            progress(tr("Смотрю папку {name}…", name=entry.name))
             move = _plan_folder(Path(entry.path), folder, sectors, type_targets, now, min_age, taken, ask_ai,
                                 protected_by)
             if isinstance(move, str):
@@ -190,20 +191,20 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
             elif move:
                 moves.append(move)
             else:
-                skipped["папки: непонятно, куда их"] += 1
+                skipped[tr("папки: непонятно, куда их")] += 1
             continue
 
         name = entry.name
         low = name.lower()
         ext = Path(low).suffix.lstrip(".")
         if low in config.SERVICE_NAMES or ext in config.SHORTCUT_EXTS:
-            skipped["ярлыки и служебные файлы"] += 1
+            skipped[tr("ярлыки и служебные файлы")] += 1
             continue
         if ext in config.PARTIAL_EXTS or ext == "tmp" or low.startswith("~$"):
-            skipped["недокачанные и временные"] += 1
+            skipped[tr("недокачанные и временные")] += 1
             continue
         if now - st.st_mtime < min_age:
-            skipped["изменены только что"] += 1
+            skipped[tr("изменены только что")] += 1
             continue
         kind, sub = file_type(name)
         source = read_zone_source(entry.path)
@@ -212,21 +213,21 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
             key = f"{key_of(entry.path)}|{st.st_size}|{st.st_mtime}"
             sector, why = ask_ai(name, domains(source), text_snippet(Path(entry.path)), key, kind)
         if sector:
-            base = sector_dir(folder, sector) / (kind or config.OTHER_TYPE)
-            label = f"{sector['name']} / {kind or config.OTHER_TYPE}"
+            base = sector_dir(folder, sector) / type_name(kind)
+            label = f"{sector['name']} / {type_name(kind)}"
         elif kind:
             target = type_targets.get(kind)
-            base = Path(target).expanduser() if target else folder / kind
-            label, why = kind, f"тип .{ext}"
+            base = Path(target).expanduser() if target else folder / type_name(kind)
+            label, why = type_name(kind), tr("тип .{ext}", ext=ext)
         elif unknown_to:
             base = Path(unknown_to).expanduser()
             base = base if base.is_absolute() else folder / base
-            label, why = unknown_to, "неизвестный тип"
+            label, why = unknown_to, tr("неизвестный тип")
         else:
             unknown.append(Path(entry.path))
             continue
         if sub:
-            base, label = base / sub, f"{label} / {sub}"
+            base, label = base / type_name(sub), f"{label} / {type_name(sub)}"
         if by_year:
             year = f"{datetime.fromtimestamp(st.st_mtime):%Y}"
             base, label = base / year, f"{label} / {year}"
@@ -235,7 +236,7 @@ def plan_sort(folder: Path, rules: Rules, progress: Progress = _quiet, now: floa
         dst = base / name
         cloud = is_cloud_only(st)
         if cloud and dst.drive.upper() != src.drive.upper():
-            skipped["облачные файлы OneDrive (перенос на другой диск их скачает)"] += 1
+            skipped[tr("облачные файлы OneDrive (перенос на другой диск их скачает)")] += 1
             continue
         duplicate = None
         if os.path.lexists(long_path(dst)) and not cloud and _same_content(src, dst):
@@ -267,7 +268,7 @@ def _plan_folder(path: Path, root: Path, sectors: list[dict], type_targets: dict
     sample: list[str] = []
     for entry, _ in walk(path, rules=False):
         if protected_by is not None and protected_by(Path(entry.path)):
-            return PROTECTED
+            return tr(PROTECTED)
         try:
             st = entry.stat(follow_symlinks=False)
         except OSError:
@@ -292,20 +293,21 @@ def _plan_folder(path: Path, root: Path, sectors: list[dict], type_targets: dict
         kind = "Установщики"
     sector, why = match_sector(name_tokens(path.name), [], kind, sectors)
     if sector is None and kind is None and ask_ai is not None:
-        sector, why = ask_ai(path.name + " (папка)", [], "Файлы внутри: " + ", ".join(sample),
+        sector, why = ask_ai(tr("{name} (папка)", name=path.name), [], tr("Файлы внутри: ") + ", ".join(sample),
                              f"{key_of(path)}|{count}|{total}|{newest}")
     if sector:
         base, label = sector_dir(root, sector), sector["name"]
     elif kind:
         target = type_targets.get(kind)
-        base = Path(target).expanduser() if target else root / kind
-        label = kind
-        why = "дистрибутив программы" if kind == "Установщики" and has_setup else f"внутри в основном: {kind.lower()}"
+        base = Path(target).expanduser() if target else root / type_name(kind)
+        label = type_name(kind)
+        why = tr("дистрибутив программы") if kind == "Установщики" and has_setup \
+            else tr("внутри в основном: {kind}", kind=type_name(kind).lower())
     else:
         return None
     dst = unique_path(base / path.name, taken)
     taken.add(key_of(dst))
-    return SortMove(path, dst, True, total, f"{label} (папка целиком)", why)
+    return SortMove(path, dst, True, total, tr("{label} (папка целиком)", label=label), why)
 
 
 # ======================================================================= выполнение
@@ -315,11 +317,12 @@ def apply_sort(plan: SortPlan, rules: Rules, session: Session, progress: Progres
     duplicates: list[Finding] = []
     keep_links = bool(rules.get("links.keep_links_for_referenced", True))
     for i, move in enumerate(plan.moves, 1):
-        progress(f"Переношу {i}/{len(plan.moves)}: {move.src.name}")
+        progress(tr("Переношу {i}/{total}: {name}", i=i, total=len(plan.moves), name=move.src.name))
         if move.duplicate_of is not None:
             duplicates.append(Finding(
-                "sort.duplicate", "Дубликаты - при сортировке", move.src, move.size, "review",
-                f"в «{display(move.duplicate_of.parent)}» уже лежит точно такой же файл", original=move.duplicate_of,
+                "sort.duplicate", tr("Дубликаты - при сортировке"), move.src, move.size, "review",
+                tr("в «{folder}» уже лежит точно такой же файл", folder=display(move.duplicate_of.parent)),
+                original=move.duplicate_of,
             ))
             continue
         try:
@@ -337,15 +340,16 @@ def apply_sort(plan: SortPlan, rules: Rules, session: Session, progress: Progres
                 refs.leave_link(move.src, new, move.is_dir, session)
                 result.links += 1
             except OSError as exc:
-                result.errors.append(f"не смог оставить ссылку на месте {display(move.src)}: {exc.strerror or exc}")
+                result.errors.append(tr("не смог оставить ссылку на месте {path}: {error}", path=display(move.src),
+                                         error=exc.strerror or exc))
     if duplicates:
-        batches, errors = review.stage(duplicates, session, title="сортировка")
+        batches, errors = review.stage(duplicates, session, title=tr("сортировка"))
         result.duplicates_staged = sum(len(b.entries) for b in batches)
         result.errors += errors
     if moves and rules.get("links.update_office_recent", True):
-        progress("Поправляю «Недавние документы» Office…")
+        progress(tr("Поправляю «Недавние документы» Office…"))
         result.office = refs.update_office_mru(moves, [plan.folder], session)
     if moves and rules.get("links.update_shortcuts", True):
-        progress("Поправляю ярлыки и список недавних файлов…")
+        progress(tr("Поправляю ярлыки и список недавних файлов…"))
         result.shortcuts = refs.update_shortcuts(moves, [plan.folder], session)
     return result

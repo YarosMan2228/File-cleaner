@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlsplit
 
 from . import config
 from .fsutil import long_path
+from .i18n import language
 from .rules import Rules
 
 TEXT_EXTS = {"txt", "md", "csv", "tsv", "json", "xml", "html", "htm", "ini", "cfg", "log", "py", "sql"}
@@ -163,6 +164,8 @@ class LocalAI:
             return None, ""
         # В ключе — отпечаток описаний: поправил about или описание сектора — модель спросят заново.
         context = self.about + "\n" + "\n".join(_describe(s) for s in sectors)
+        if language() != "ru":  # объяснение на другом языке — другой ответ (русские ключи кэша не меняются)
+            context += f"\nlang={language()}"
         key = f"{cache_key}|v{PROMPT_VERSION}|{hashlib.sha1(context.encode('utf-8')).hexdigest()[:10]}"
         cached = self._cache.get(key)
         if cached is None:
@@ -180,7 +183,7 @@ class LocalAI:
                 "- confidence: 90-100 = the topic is named explicitly in the name or content; "
                 "60-89 = a strong hint; below 60 = a guess.\n"
                 "Answer strictly as JSON: {\"folder\": \"<exact folder name from the list or empty>\", "
-                "\"confidence\": <0-100>, \"why\": \"<up to 10 words in Russian>\"}"
+                f"\"confidence\": <0-100>, \"why\": \"<up to 10 words in {'English' if language() == 'en' else 'Russian'}>\"}}"
             )
             cached = self._ask(prompt)
             if "folder" not in cached:

@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from . import config
+from .i18n import plural_words, tr
 
 FILE_ATTRIBUTE_READONLY = 0x1
 FILE_ATTRIBUTE_HIDDEN = 0x2
@@ -262,7 +263,7 @@ def move_path(src: Path | str, dst: Path | str) -> None:
     """Перемещает файл или папку. Никогда ничего не перезаписывает."""
     s, d = long_path(src), long_path(dst)
     if os.path.lexists(d):
-        raise FileExistsError(errno.EEXIST, "Уже существует", os.fspath(dst))
+        raise FileExistsError(errno.EEXIST, tr("Уже существует"), os.fspath(dst))
     try:
         os.rename(s, d)
         return
@@ -275,7 +276,7 @@ def move_path(src: Path | str, dst: Path | str) -> None:
         try:
             remove_tree(s)
         except OSError as exc:
-            raise PartialMoveError(errno.EIO, f"Скопировано, но оригинал удалился не полностью: {exc}",
+            raise PartialMoveError(errno.EIO, tr("Скопировано, но оригинал удалился не полностью: {error}", error=exc),
                                    os.fspath(src)) from exc
     else:
         shutil.copy2(s, d)
@@ -293,11 +294,12 @@ def age_days(timestamp: float, now: float | None = None) -> float:
 
 def human_size(n: float) -> str:
     size = float(n)
-    for unit in ("Б", "КБ", "МБ", "ГБ"):
+    units = [tr(unit) for unit in ("Б", "КБ", "МБ", "ГБ", "ТБ")]
+    for unit in units[:-1]:
         if abs(size) < 1024:
-            return f"{size:.0f} {unit}" if unit == "Б" else f"{size:.1f} {unit}"
+            return f"{size:.0f} {unit}" if unit == units[0] else f"{size:.1f} {unit}"
         size /= 1024
-    return f"{size:.1f} ТБ"
+    return f"{size:.1f} {units[-1]}"
 
 
 _SIZE_RE = re.compile(r"^\s*([\d.,]+)\s*([a-zа-я]*)\s*$", re.I)
@@ -316,11 +318,14 @@ def parse_size(text: str | int) -> int:
         return text
     match = _SIZE_RE.match(text)
     if not match or match.group(2).lower() not in _UNITS:
-        raise ValueError(f"Непонятный размер: {text!r} (пример: 100KB, 1.5GB)")
+        raise ValueError(tr("Непонятный размер: {text} (пример: 100KB, 1.5GB)", text=repr(text)))
     return int(float(match.group(1).replace(",", ".")) * _UNITS[match.group(2).lower()])
 
 
 def plural(n: int, one: str, few: str, many: str) -> str:
+    words = plural_words(one, few, many)
+    if len(words) == 2:  # английский: одна форма для 1, другая для остальных
+        return f"{n:,} {words[0] if n == 1 else words[1]}".replace(",", " ")
     n10, n100 = n % 10, n % 100
     if n10 == 1 and n100 != 11:
         word = one

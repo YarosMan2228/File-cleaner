@@ -1,6 +1,35 @@
 'use strict';
 /* File Cleaner — окно программы. Данные — с локального сервера (filecleaner/gui/app.py). */
 
+// ================================================================ язык
+// Фразы в коде — русские; для английского берётся перевод из i18n.js. Язык сервер ставит в <html lang>.
+const LANG = document.documentElement.lang === 'en' ? 'en' : 'ru';
+const LOCALE = LANG === 'en' ? 'en-GB' : 'ru-RU';
+const DICT = LANG === 'en' ? (window.I18N_EN || {}) : {};
+const PLURALS_EN = window.I18N_PLURALS_EN || {};
+
+/** Фраза на языке окна; {0}, {1}… заменяются аргументами. */
+function t(text, ...args) {
+  const template = DICT[text] || text;
+  return args.length ? template.replace(/\{(\d+)\}/g, (match, i) => String(args[i] ?? '')) : template;
+}
+
+/** Перевод неподвижной разметки index.html: текстовые узлы и подписи для экранного диктора. */
+function translateStatic() {
+  if (LANG !== 'en') return;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const key = node.nodeValue.replace(/\s+/g, ' ').trim();
+    if (key && DICT[key]) node.nodeValue = node.nodeValue.replace(/\S[\s\S]*\S|\S/, DICT[key]);
+  }
+  for (const el of document.querySelectorAll('[placeholder], [aria-label], [title]')) {
+    for (const attr of ['placeholder', 'aria-label', 'title']) {
+      const value = el.getAttribute(attr);
+      if (value && DICT[value]) el.setAttribute(attr, DICT[value]);
+    }
+  }
+}
+
 // ================================================================ доступ к серверу
 const HASH = new URLSearchParams(location.hash.slice(1));  // #token=…&view=review
 
@@ -22,7 +51,7 @@ async function api(path, body) {
   });
   let data = null;
   try { data = await response.json(); } catch { /* пустой ответ */ }
-  if (!response.ok) throw new Error((data && data.error) || `Ошибка ${response.status}`);
+  if (!response.ok) throw new Error((data && data.error) || t('Ошибка {0}', response.status));
   return data;
 }
 
@@ -46,10 +75,10 @@ function h(tag, props = {}, ...children) {
   return el;
 }
 
-const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
+const number = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
 
 function size(bytes) {
-  const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  const units = [t('Б'), t('КБ'), t('МБ'), t('ГБ'), t('ТБ')];
   let value = bytes || 0;
   let unit = 0;
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
@@ -57,18 +86,20 @@ function size(bytes) {
 }
 
 function plural(n, one, few, many) {
+  const en = LANG === 'en' && PLURALS_EN[one];
+  if (en) return `${n.toLocaleString(LOCALE)} ${n === 1 ? en[0] : en[1]}`;
   const n10 = n % 10;
   const n100 = n % 100;
   const word = n10 === 1 && n100 !== 11 ? one
     : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14) ? few : many;
-  return `${n.toLocaleString('ru-RU')} ${word}`;
+  return `${n.toLocaleString(LOCALE)} ${word}`;
 }
-const objects = (n) => plural(n, 'объект', 'объекта', 'объектов');
+const objects = (n) => plural(n, 'объект', 'объекта', 'объектов');  // русские формы — ключ для английских
 const total = (items) => items.reduce((sum, item) => sum + (item.size || 0), 0);
 
 function when(value) {
   const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
-  return date.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString(LOCALE, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 let toastTimer = 0;
@@ -106,7 +137,7 @@ function listBlock(title, group, columns, cells) {
   const rows = group.items.map((item) => h('tr', {}, cells(item).map((cell, i) =>
     h('td', { class: columns[i].num ? 'num' : false }, cell))));
   const more = group.count > group.items.length
-    ? h('p', { class: 'more' }, `…и ещё ${objects(group.count - group.items.length)} — все есть в отчёте.`) : null;
+    ? h('p', { class: 'more' }, t('…и ещё {0} — все есть в отчёте.', objects(group.count - group.items.length))) : null;
   return h('details', {},
     h('summary', {}, title, h('small', {}, `${objects(group.count)} · ${size(group.bytes)}`)),
     h('div', { class: 'table-wrap' }, h('table', {},
@@ -167,7 +198,7 @@ async function refreshStatus(first = false) {
   try {
     state.status = await api('/api/status');
   } catch (error) {
-    $('#ai-text').textContent = TOKEN ? 'Программа закрыта — запусти её снова' : 'Открой окно через File Cleaner';
+    $('#ai-text').textContent = TOKEN ? t('Программа закрыта — запусти её снова') : t('Открой окно через File Cleaner');
     setBusy(true);
     return;
   }
@@ -191,20 +222,20 @@ function renderStatus() {
   const chip = $('#ai-status');
   chip.classList.toggle('ok', ai.enabled && ai.local && ai.available);
   chip.classList.toggle('warn', ai.enabled && !(ai.local && ai.available));
-  $('#ai-text').textContent = !ai.enabled ? 'ИИ выключен в правилах'
-    : !ai.local ? 'ИИ выключен: модель не на этом компьютере'
-      : ai.available ? `ИИ: ${ai.model} готов` : 'ИИ: запусти Ollama';
+  $('#ai-text').textContent = !ai.enabled ? t('ИИ выключен в правилах')
+    : !ai.local ? t('ИИ выключен: модель не на этом компьютере')
+      : ai.available ? t('ИИ: {0} готов', ai.model) : t('ИИ: запусти Ollama');
 
   const count = $('#review-count');
   count.hidden = !review.count;
-  count.textContent = review.count ? review.count.toLocaleString('ru-RU') : '';
+  count.textContent = review.count ? review.count.toLocaleString(LOCALE) : '';
 
   const line = $('#last-run');
   line.replaceChildren();
   if (last) {
-    line.append(`Прошлый запуск: ${when(last.finished)} — освобождено ${size(last.freed)}, разложено ${objects(last.sorted)}.`);
+    line.append(t('Прошлый запуск: {0} — освобождено {1}, разложено {2}.', when(last.finished), size(last.freed), objects(last.sorted)));
     if (last.report) {
-      line.append(' ', h('button', { type: 'button', class: 'link', onclick: () => openReport(last.report) }, 'Отчёт'));
+      line.append(' ', h('button', { type: 'button', class: 'link', onclick: () => openReport(last.report) }, t('Отчёт')));
     }
   }
 }
@@ -218,7 +249,7 @@ async function refreshAiSetup() {
 function setupStep(done, title, hint, action) {
   return h('li', { class: done ? 'done' : 'todo' },
     h('span', { class: 'mark', 'aria-hidden': 'true' }, done ? '✓' : '·'),
-    h('div', {}, h('strong', {}, title), h('span', { class: 'sr-only' }, done ? ' — готово' : ' — нужно сделать'),
+    h('div', {}, h('strong', {}, title), h('span', { class: 'sr-only' }, done ? t(' — готово') : t(' — нужно сделать')),
       hint ? h('span', { class: 'sub' }, hint) : null),
     action);
 }
@@ -234,22 +265,22 @@ function renderAiSetup() {
   }, label);
   let steps;
   if (!setup.local) {
-    steps = [setupStep(false, 'Адрес модели не на этом компьютере',
-      'Ради приватности ИИ выключен: файлы не должны уходить в сеть. Верни адрес http://localhost:11434 в файле правил.')];
+    steps = [setupStep(false, t('Адрес модели не на этом компьютере'),
+      t('Ради приватности ИИ выключен: файлы не должны уходить в сеть. Верни адрес http://localhost:11434 в файле правил.'))];
   } else {
     steps = [
-      setupStep(setup.installed, 'Ollama установлена',
-        setup.installed ? null : 'Скачай и установи её с официального сайта, потом вернись сюда — я проверю сам.',
-        setup.installed ? null : button('Открыть сайт Ollama', () => api('/api/open', { what: 'ollama-site' })
+      setupStep(setup.installed, t('Ollama установлена'),
+        setup.installed ? null : t('Скачай и установи её с официального сайта, потом вернись сюда — я проверю сам.'),
+        setup.installed ? null : button(t('Открыть сайт Ollama'), () => api('/api/open', { what: 'ollama-site' })
           .catch((e) => toast(e.message, true)))),
-      setupStep(setup.running, 'Ollama запущена',
-        setup.running ? null : 'Она работает в фоне, значок — возле часов.',
-        !setup.running && setup.installed ? button('Запустить Ollama', startOllama) : null),
-      setupStep(setup.has_model, `Модель ${setup.model} скачана`,
+      setupStep(setup.running, t('Ollama запущена'),
+        setup.running ? null : t('Она работает в фоне, значок — возле часов.'),
+        !setup.running && setup.installed ? button(t('Запустить Ollama'), startOllama) : null),
+      setupStep(setup.has_model, t('Модель {0} скачана', setup.model),
         setup.has_model ? null
-          : setup.running ? 'Около 4,7 ГБ, скачивается один раз.' : 'Проверю, когда Ollama запустится.',
+          : setup.running ? t('Около 4,7 ГБ, скачивается один раз.') : t('Проверю, когда Ollama запустится.'),
         !setup.has_model && setup.running
-          ? button(pulling ? 'Скачиваю…' : 'Скачать модель', () => startTask('/api/ai/pull', {}), pulling) : null),
+          ? button(pulling ? t('Скачиваю…') : t('Скачать модель'), () => startTask('/api/ai/pull', {}), pulling) : null),
     ];
   }
   $('#ai-steps').replaceChildren(...steps);
@@ -258,8 +289,8 @@ function renderAiSetup() {
 async function startOllama() {
   try {
     const result = await api('/api/ai/start', {});
-    if (!result.started) { toast('Не нашёл Ollama — установи её с сайта.', true); return; }
-    toast('Запускаю Ollama — это займёт несколько секунд.');
+    if (!result.started) { toast(t('Не нашёл Ollama — установи её с сайта.'), true); return; }
+    toast(t('Запускаю Ollama — это займёт несколько секунд.'));
     for (let i = 0; i < 10; i += 1) {  // проверяем, поднялась ли
       await new Promise((resolve) => setTimeout(resolve, 3000));
       await refreshAiSetup();
@@ -276,7 +307,7 @@ function bindAiSetup() {
   $('#btn-ai-off').addEventListener('click', async () => {
     try {
       await api('/api/ai/disable', {});
-      toast('ИИ выключен: раскладываю только по правилам. Включить можно в «Настройках».');
+      toast(t('ИИ выключен: раскладываю только по правилам. Включить можно в «Настройках».'));
       state.settings = null;
       refreshStatus();
     } catch (error) {
@@ -331,7 +362,7 @@ function renderTask() {
   panel.hidden = false;
   setBusy(true);
   $('#task-title').textContent = task.title;
-  $('#task-progress').textContent = task.progress || 'Работаю…';
+  $('#task-progress').textContent = task.progress || t('Работаю…');
   const bar = $('#task-bar');
   const known = typeof task.fraction === 'number';
   bar.classList.toggle('determinate', known);
@@ -341,25 +372,25 @@ function renderTask() {
   const log = $('#task-log');
   log.replaceChildren(...task.log.slice(-14).map((line) => h('li', {}, line)));
   log.scrollTop = log.scrollHeight;
-  $('#btn-stay').hidden = !/^Через \d+ с/.test(task.progress || '');
+  $('#btn-stay').hidden = typeof task.countdown !== 'number';
 }
 
 function onTaskFinished(task, quiet = false) {
   if (!task) return;
-  if (task.error && !quiet) toast(`Не получилось: ${task.error}`, true);
+  if (task.error && !quiet) toast(t('Не получилось: {0}', task.error), true);
   if (task.kind === 'preview' && task.result) {
     state.plan = task.result;
     state.result = null;
     renderPlan();
   }
   if (task.kind === 'pull' && !task.error && !quiet) {
-    toast('Модель скачана — ИИ готов раскладывать.');
+    toast(t('Модель скачана — ИИ готов раскладывать.'));
   }
   if (task.kind === 'night' && task.result) {
     state.result = task.result;
     state.plan = null;
     renderResult();
-    if (!quiet) toast(`Готово: освобождено ${size(task.result.freed)}, разложено ${objects(task.result.sorted)}.`);
+    if (!quiet) toast(t('Готово: освобождено {0}, разложено {1}.', size(task.result.freed), objects(task.result.sorted)));
   }
   setBusy(false);
   if (!quiet) {
@@ -385,19 +416,19 @@ function renderPlan() {
   $('#plan-panel').hidden = !plan;
   if (!plan) return;
   $('#plan-stats').replaceChildren(
-    stat(size(plan.junk.bytes), `кэши и временное, ${objects(plan.junk.count)} — удалю сразу`),
-    stat(size(plan.auto.bytes), `лишние копии, ${objects(plan.auto.count)} — удалю, сверив с оригиналом`),
-    stat(size(plan.waiting.bytes), `спорное, ${objects(plan.waiting.count)} — отложу на решение`),
-    stat(size(plan.report.bytes), 'только покажу в отчёте — не трону'),
+    stat(size(plan.junk.bytes), t('кэши и временное, {0} — удалю сразу', objects(plan.junk.count))),
+    stat(size(plan.auto.bytes), t('лишние копии, {0} — удалю, сверив с оригиналом', objects(plan.auto.count))),
+    stat(size(plan.waiting.bytes), t('спорное, {0} — отложу на решение', objects(plan.waiting.count))),
+    stat(size(plan.report.bytes), t('только покажу в отчёте — не трону')),
   );
-  const sortLine = plan.sort.length ? h('p', {}, 'Разложу: ',
-    plan.sort.map((f) => `${f.path}${f.subfolders ? '' : ' (только файлы)'}`).join(', '), '.') : null;
+  const sortLine = plan.sort.length ? h('p', {}, t('Разложу: '),
+    plan.sort.map((f) => `${f.path}${f.subfolders ? '' : t(' (только файлы)')}`).join(', '), '.') : null;
   $('#plan-details').replaceChildren(...[
-    listBlock('Удалю сразу — копии', plan.auto,
-      [{ title: 'Файл' }, { title: 'Размер', num: true }, { title: 'Что останется' }],
+    listBlock(t('Удалю сразу — копии'), plan.auto,
+      [{ title: t('Файл') }, { title: t('Размер'), num: true }, { title: t('Что останется') }],
       (item) => [item.path, size(item.size), item.keep || '—']),
-    listBlock('Отложу на решение', plan.waiting,
-      [{ title: 'Файл' }, { title: 'Размер', num: true }, { title: 'Почему' }],
+    listBlock(t('Отложу на решение'), plan.waiting,
+      [{ title: t('Файл') }, { title: t('Размер'), num: true }, { title: t('Почему') }],
       (item) => [item.path, size(item.size), item.reason]),
     sortLine,
     plan.notes.length ? h('ul', { class: 'notes' }, plan.notes.map((note) => h('li', {}, note))) : null,
@@ -405,7 +436,7 @@ function renderPlan() {
   $('#btn-run').disabled = state.busy;
   $('#btn-run').classList.add('primary');
   $('#btn-preview').classList.remove('primary');
-  $('#run-hint').textContent = 'Можно приступать. Разложилось не так — «История» → «Отменить».';
+  $('#run-hint').textContent = t('Можно приступать. Разложилось не так — «История» → «Отменить».');
 }
 
 function renderResult() {
@@ -414,15 +445,15 @@ function renderResult() {
   $('#result-panel').hidden = !result;
   if (!result) return;
   $('#result-stats').replaceChildren(
-    stat(size(result.freed), `освобождено: кэши ${size(result.junk_freed)}, копии ${size(result.auto_freed)}`),
-    stat(result.sorted.toLocaleString('ru-RU'), 'разложено по папкам'),
-    stat(size(result.waiting_bytes), `ждёт решения, ${objects(result.waiting)}`),
+    stat(size(result.freed), t('освобождено: кэши {0}, копии {1}', size(result.junk_freed), size(result.auto_freed))),
+    stat(result.sorted.toLocaleString(LOCALE), t('разложено по папкам')),
+    stat(size(result.waiting_bytes), t('ждёт решения, {0}', objects(result.waiting))),
   );
   const details = [];
   if (result.notes.length) details.push(h('ul', { class: 'notes' }, result.notes.map((n) => h('li', {}, n))));
   if (result.errors_count) {
     details.push(h('details', {},
-      h('summary', { class: 'errors' }, `Не получилось: ${objects(result.errors_count)}`),
+      h('summary', { class: 'errors' }, t('Не получилось: {0}', objects(result.errors_count))),
       h('ul', { class: 'notes' }, result.errors.map((e) => h('li', {}, e)))));
   }
   $('#result-details').replaceChildren(...details);
@@ -431,7 +462,7 @@ function renderResult() {
   $('#btn-run').disabled = true;
   $('#btn-run').classList.remove('primary');
   $('#btn-preview').classList.add('primary');
-  $('#run-hint').textContent = 'Чтобы запустить ещё раз, снова посмотри, что будет.';
+  $('#run-hint').textContent = t('Чтобы запустить ещё раз, снова посмотри, что будет.');
 }
 
 function bindHome() {
@@ -439,15 +470,15 @@ function bindHome() {
   $('#btn-run').addEventListener('click', async () => {
     const sleep = $('#opt-sleep').checked;
     const ok = await confirmDialog({
-      title: 'Приступить?',
-      text: `Удалю кэши и проверенные копии, спорное отложу на решение, разложу папки.${sleep ? ' В конце усыплю компьютер.' : ''} Можно уйти — всё сделается само.`,
-      ok: 'Приступить',
+      title: t('Приступить?'),
+      text: t('Удалю кэши и проверенные копии, спорное отложу на решение, разложу папки.{0} Можно уйти — всё сделается само.', sleep ? t(' В конце усыплю компьютер.') : ''),
+      ok: t('Приступить'),
       danger: false,
     });
     if (ok) startTask('/api/night', { after: sleep ? 'sleep' : 'nothing' });
   });
   $('#btn-stay').addEventListener('click', async () => {
-    try { await api('/api/stay-awake', {}); toast('Хорошо, компьютер не усыплю.'); } catch (e) { toast(e.message, true); }
+    try { await api('/api/stay-awake', {}); toast(t('Хорошо, компьютер не усыплю.')); } catch (e) { toast(e.message, true); }
   });
   $('#btn-result-report').addEventListener('click', () => state.result && openReport(state.result.report));
   $('#btn-result-review').addEventListener('click', () => showView('review'));
@@ -481,7 +512,7 @@ function updateSelection() {
   const chosen = selectedItems();
   const label = $('#review-selected');
   if (!label) return;
-  label.textContent = chosen.length ? `Выбрано ${objects(chosen.length)} · ${size(total(chosen))}` : 'Ничего не выбрано';
+  label.textContent = chosen.length ? t('Выбрано {0} · {1}', objects(chosen.length), size(total(chosen))) : t('Ничего не выбрано');
   $('#btn-delete').disabled = state.busy || !chosen.length;
   $('#btn-restore').disabled = state.busy || !chosen.length;
 }
@@ -490,7 +521,7 @@ async function loadReview() {
   try {
     state.review = await api('/api/review');
   } catch (error) {
-    $('#review-list').replaceChildren(h('p', { class: 'errors' }, `Не удалось загрузить: ${error.message}`));
+    $('#review-list').replaceChildren(h('p', { class: 'errors' }, t('Не удалось загрузить: {0}', error.message)));
     return;
   }
   renderReview();
@@ -504,8 +535,8 @@ function renderReview() {
   $('#review-actions').hidden = !items.length;
   if (!items.length) {
     list.replaceChildren(h('div', { class: 'panel empty' },
-      h('h2', {}, 'Ничего не ждёт решения'),
-      h('p', {}, 'Когда программа отложит спорные файлы, они появятся здесь.')));
+      h('h2', {}, t('Ничего не ждёт решения')),
+      h('p', {}, t('Когда программа отложит спорные файлы, они появятся здесь.'))));
     return;
   }
   const groups = new Map();
@@ -516,13 +547,13 @@ function renderReview() {
   const sections = [...groups.entries()]
     .sort((a, b) => total(b[1]) - total(a[1]))
     .map(([name, rows]) => groupSection(name, rows));
-  list.replaceChildren(...(sections.length ? sections : [h('p', { class: 'empty' }, 'По такому запросу ничего нет.')]));
+  list.replaceChildren(...(sections.length ? sections : [h('p', { class: 'empty' }, t('По такому запросу ничего нет.'))]));
   updateSelection();
 }
 
 function groupSection(name, rows) {
   rows.sort((a, b) => b.size - a.size);
-  const groupBox = h('input', { type: 'checkbox', 'aria-label': `Выбрать всю группу «${name}»` });
+  const groupBox = h('input', { type: 'checkbox', 'aria-label': t('Выбрать всю группу «{0}»', name) });
   const boxes = [];
   const syncGroup = () => {
     const chosen = rows.filter(isSelected).length;
@@ -535,17 +566,17 @@ function groupSection(name, rows) {
     updateSelection();
   });
   const body = rows.map((item) => {
-    const box = h('input', { type: 'checkbox', 'aria-label': `Выбрать «${item.name}»` });
+    const box = h('input', { type: 'checkbox', 'aria-label': t('Выбрать «{0}»', item.name) });
     box.checked = isSelected(item);
     box.addEventListener('change', () => { setSelected(item, box.checked); syncGroup(); updateSelection(); });
     boxes.push(box);
     const reveal = h('button', {
       type: 'button', class: 'link',
       onclick: () => api('/api/reveal', { batch: item.batch, id: item.id }).catch((e) => toast(e.message, true)),
-    }, 'Показать');
+    }, t('Показать'));
     return h('tr', {},
       h('td', { class: 'pick' }, box),
-      h('td', { class: 'name' }, h('strong', {}, item.name), h('span', { class: 'sub' }, `из ${item.from}`)),
+      h('td', { class: 'name' }, h('strong', {}, item.name), h('span', { class: 'sub' }, t('из {0}', item.from))),
       h('td', { class: 'num' }, size(item.size)),
       h('td', {}, item.reason),
       h('td', {}, item.keep || '—'),
@@ -557,9 +588,9 @@ function groupSection(name, rows) {
       h('span', { class: 'meta' }, `${objects(rows.length)} · ${size(total(rows))}`)),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {},
-        h('th', { class: 'pick' }, h('span', { class: 'sr-only' }, 'Выбор')),
-        h('th', {}, 'Файл'), h('th', { class: 'num' }, 'Размер'), h('th', {}, 'Почему здесь'),
-        h('th', {}, 'Что останется'), h('th', {}, h('span', { class: 'sr-only' }, 'Показать в Проводнике')))),
+        h('th', { class: 'pick' }, h('span', { class: 'sr-only' }, t('Выбор'))),
+        h('th', {}, t('Файл')), h('th', { class: 'num' }, t('Размер')), h('th', {}, t('Почему здесь')),
+        h('th', {}, t('Что останется')), h('th', {}, h('span', { class: 'sr-only' }, t('Показать в Проводнике'))))),
       h('tbody', {}, body))));
 }
 
@@ -570,9 +601,9 @@ async function resolveItems(action, chosen) {
       action, items: chosen.map((item) => ({ batch: item.batch, id: item.id })),
     });
     const message = action === 'delete'
-      ? `Удалено ${objects(result.deleted)}, освобождено ${size(result.freed)}`
-      : `Вернул на место ${objects(result.restored)}`;
-    const failed = result.errors.length ? ` · не получилось: ${result.errors.length} (${result.errors[0]})` : '';
+      ? t('Удалено {0}, освобождено {1}', objects(result.deleted), size(result.freed))
+      : t('Вернул на место {0}', objects(result.restored));
+    const failed = result.errors.length ? t(' · не получилось: {0} ({1})', result.errors.length, result.errors[0]) : '';
     toast(message + failed, Boolean(failed));
   } catch (error) {
     toast(error.message, true);
@@ -597,9 +628,9 @@ function bindReview() {
     const chosen = selectedItems();
     if (!chosen.length) return;
     const ok = await confirmDialog({
-      title: `Удалить ${objects(chosen.length)}?`,
-      text: `Освободится ${size(total(chosen))}. Файлы удалятся насовсем — это не отменить.`,
-      ok: 'Удалить',
+      title: t('Удалить {0}?', objects(chosen.length)),
+      text: t('Освободится {0}. Файлы удалятся насовсем — это не отменить.', size(total(chosen))),
+      ok: t('Удалить'),
     });
     if (ok) resolveItems('delete', chosen);
   });
@@ -616,12 +647,12 @@ async function loadHistory() {
   try {
     sessions = await api('/api/history');
   } catch (error) {
-    list.replaceChildren(h('p', { class: 'errors' }, `Не удалось загрузить: ${error.message}`));
+    list.replaceChildren(h('p', { class: 'errors' }, t('Не удалось загрузить: {0}', error.message)));
     return;
   }
   if (!sessions.length) {
-    list.replaceChildren(h('div', { class: 'panel empty' }, h('h2', {}, 'Пока пусто'),
-      h('p', {}, 'Здесь появится всё, что сделает программа.')));
+    list.replaceChildren(h('div', { class: 'panel empty' }, h('h2', {}, t('Пока пусто')),
+      h('p', {}, t('Здесь появится всё, что сделает программа.'))));
     return;
   }
   list.replaceChildren(h('div', { class: 'panel' }, sessions.map(historyRow)));
@@ -629,10 +660,10 @@ async function loadHistory() {
 
 function historyRow(session) {
   let action;
-  if (session.undone) action = h('span', { class: 'tag' }, 'Отменено');
+  if (session.undone) action = h('span', { class: 'tag' }, t('Отменено'));
   else if (session.undoable) {
-    action = h('button', { type: 'button', class: 'btn small', onclick: () => undo(session) }, 'Отменить');
-  } else action = h('span', { class: 'tag' }, session.deleted ? 'Удалённое не вернуть' : 'Нечего возвращать');
+    action = h('button', { type: 'button', class: 'btn small', onclick: () => undo(session) }, t('Отменить'));
+  } else action = h('span', { class: 'tag' }, session.deleted ? t('Удалённое не вернуть') : t('Нечего возвращать'));
   return h('div', { class: 'history-row' },
     h('time', { datetime: session.created }, when(session.created)),
     h('div', {}, h('strong', {}, session.title), h('span', { class: 'sub' }, session.summary)),
@@ -641,16 +672,16 @@ function historyRow(session) {
 
 async function undo(session) {
   const ok = await confirmDialog({
-    title: 'Отменить?',
-    text: `«${session.title}»: ${session.summary}. Перенесённое вернётся на места.`,
-    ok: 'Отменить',
+    title: t('Отменить?'),
+    text: t('«{0}»: {1}. Перенесённое вернётся на места.', session.title, session.summary),
+    ok: t('Отменить'),
     danger: false,
   });
   if (!ok) return;
   try {
     const result = await api('/api/undo', { id: session.id });
     const problems = result.errors.length + result.missing.length;
-    toast(`Вернул на место ${objects(result.restored)}${problems ? ` · не получилось: ${problems}` : ''}`, problems > 0);
+    toast(t('Вернул на место {0}{1}', objects(result.restored), problems ? t(' · не получилось: {0}', problems) : ''), problems > 0);
   } catch (error) {
     toast(error.message, true);
   }
@@ -696,30 +727,30 @@ function toggle(checked, label, onChange) {
 }
 
 function sectorCard(sector, index, types) {
-  const typeBoxes = types.map((type) => toggle(sector.types.includes(type), type, (on) => {
-    sector.types = on ? [...sector.types, type] : sector.types.filter((t) => t !== type);
+  const typeBoxes = types.map((type) => toggle(sector.types.includes(type.id), type.name, (on) => {
+    sector.types = on ? [...sector.types, type.id] : sector.types.filter((id) => id !== type.id);
   }));
   const remove = h('button', {
     type: 'button', class: 'btn small',
     onclick: () => { state.draft.sectors.splice(index, 1); renderSettings(); markDirty(); },
-  }, 'Удалить сектор');
+  }, t('Удалить сектор'));
   return h('fieldset', { class: 'sector' },
-    h('legend', { class: 'sr-only' }, `Сектор «${sector.name || 'без названия'}»`),
+    h('legend', { class: 'sr-only' }, t('Сектор «{0}»', sector.name || t('без названия'))),
     h('div', { class: 'sector-head' },
-      field('Название — это имя папки', textInput(sector.name, (v) => { sector.name = v; }, { maxlength: '60' })),
+      field(t('Название — это имя папки'), textInput(sector.name, (v) => { sector.name = v; }, { maxlength: '60' })),
       remove),
-    field('Описание для ИИ', textArea(sector.description, (v) => { sector.description = v; }),
-      'Чем подробнее, тем точнее ИИ раскладывает: чем ты тут занимаешься, какие проекты, какие слова встречаются.'),
+    field(t('Описание для ИИ'), textArea(sector.description, (v) => { sector.description = v; }),
+      t('Чем подробнее, тем точнее ИИ раскладывает: чем ты тут занимаешься, какие проекты, какие слова встречаются.')),
     h('div', { class: 'grid-2' },
-      field('Ключевые слова в имени файла', textInput(sector.keywords.join(', '), (v) => { sector.keywords = splitList(v); }),
-        'Через запятую: rtu, lab, домашка'),
-      field('Сайты, откуда скачано', textInput(sector.sources.join(', '), (v) => { sector.sources = splitList(v); }),
-        'Через запятую: rtu.lv, ortus.rtu.lv')),
-    h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Все файлы этих типов — сюда'),
+      field(t('Ключевые слова в имени файла'), textInput(sector.keywords.join(', '), (v) => { sector.keywords = splitList(v); }),
+        t('Через запятую: rtu, lab, домашка')),
+      field(t('Сайты, откуда скачано'), textInput(sector.sources.join(', '), (v) => { sector.sources = splitList(v); }),
+        t('Через запятую: rtu.lv, ortus.rtu.lv'))),
+    h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('Все файлы этих типов — сюда')),
       h('div', { class: 'types' }, typeBoxes)),
-    field('Где хранить (необязательно)', textInput(sector.target, (v) => { sector.target = v; },
-      { placeholder: `например B:/${sector.name || 'Сектор'}` }),
-      'Пусто — папка сектора рядом с разбираемой папкой.'));
+    field(t('Где хранить (необязательно)'), textInput(sector.target, (v) => { sector.target = v; },
+      { placeholder: t('например B:/{0}', sector.name || t('Сектор')) }),
+      t('Пусто — папка сектора рядом с разбираемой папкой.')));
 }
 
 function renderSettings() {
@@ -734,7 +765,7 @@ function renderSettings() {
       markDirty();
       body.querySelector('.sector:last-of-type input')?.focus();
     },
-  }, 'Добавить сектор');
+  }, t('Добавить сектор'));
 
   const confidence = h('input', { type: 'range', min: '50', max: '100', step: '5', 'aria-describedby': 'confidence-hint' });
   confidence.value = String(draft.ai.min_confidence);
@@ -745,8 +776,8 @@ function renderSettings() {
     markDirty();
   });
 
-  const afterChoices = [['nothing', 'ничего'], ['sleep', 'усыпить компьютер'], ['shutdown', 'выключить компьютер']];
-  const after = h('div', { class: 'radios', role: 'radiogroup', 'aria-label': 'Когда «Приступай» закончит' },
+  const afterChoices = [['nothing', t('ничего')], ['sleep', t('усыпить компьютер')], ['shutdown', t('выключить компьютер')]];
+  const after = h('div', { class: 'radios', role: 'radiogroup', 'aria-label': t('Когда «Приступай» закончит') },
     afterChoices.map(([value, label]) => {
       const radio = h('input', { type: 'radio', name: 'night-after', value });
       radio.checked = draft.night.after === value;
@@ -754,44 +785,53 @@ function renderSettings() {
       return h('label', { class: 'check' }, radio, label);
     }));
 
+  const languages = h('div', { class: 'radios', role: 'radiogroup', 'aria-label': t('Язык программы') },
+    Object.entries(state.settings.languages).map(([value, label]) => {
+      const radio = h('input', { type: 'radio', name: 'ui-language', value });
+      radio.checked = draft.ui.language === value;
+      radio.addEventListener('change', () => { draft.ui.language = value; markDirty(); });
+      return h('label', { class: 'check' }, radio, label);
+    }));
+
   body.replaceChildren(
+    h('div', { class: 'panel' }, h('h2', {}, t('Язык программы')), languages),
     h('div', { class: 'panel' },
-      h('h2', {}, 'Секторы — куда раскладывать'),
-      h('p', { class: 'hint' }, 'Файл попадает в сектор, если скачан с сайта из списка, в имени есть ключевое слово, '
-        + 'подходит тип или его узнал ИИ по описанию. Внутри сектора файлы раскладываются по типам.'),
+      h('h2', {}, t('Секторы — куда раскладывать')),
+      h('p', { class: 'hint' }, t('Файл попадает в сектор, если скачан с сайта из списка, в имени есть ключевое слово, '
+        + 'подходит тип или его узнал ИИ по описанию. Внутри сектора файлы раскладываются по типам.')),
       draft.sectors.map((sector, i) => sectorCard(sector, i, state.settings.types)),
       h('div', { class: 'actions' }, addSector)),
     h('div', { class: 'panel' },
-      h('h2', {}, 'ИИ'),
-      toggle(draft.ai.enabled, 'Раскладывать с помощью локальной модели (Ollama) — файлы не уходят в интернет',
+      h('h2', {}, t('ИИ')),
+      toggle(draft.ai.enabled, t('Раскладывать с помощью локальной модели (Ollama) — файлы не уходят в интернет'),
         (on) => { draft.ai.enabled = on; }),
       h('div', { class: 'grid-2' },
-        field('Модель', textInput(draft.ai.model, (v) => { draft.ai.model = v.trim(); }), 'Например qwen2.5:7b'),
+        field(t('Модель'), textInput(draft.ai.model, (v) => { draft.ai.model = v.trim(); }), t('Например qwen2.5:7b')),
         h('label', { class: 'field' },
-          h('span', { class: 'field-label' }, 'Уверенность, с которой файл уходит в сектор: ', confidenceValue),
+          h('span', { class: 'field-label' }, t('Уверенность, с которой файл уходит в сектор: '), confidenceValue),
           confidence,
-          h('span', { class: 'hint', id: 'confidence-hint' }, 'При 70 модель часто угадывает, 80 — проверенный порог.'))),
-      field('О тебе — для ИИ', textArea(draft.ai.about, (v) => { draft.ai.about = v; }),
-        'Пара фраз: где учишься, кем работаешь, над какими проектами. После правки описаний ИИ заново '
-        + 'посмотрит файлы при следующем запуске.')),
+          h('span', { class: 'hint', id: 'confidence-hint' }, t('При 70 модель часто угадывает, 80 — проверенный порог.')))),
+      field(t('О тебе — для ИИ'), textArea(draft.ai.about, (v) => { draft.ai.about = v; }),
+        t('Пара фраз: где учишься, кем работаешь, над какими проектами. После правки описаний ИИ заново '
+        + 'посмотрит файлы при следующем запуске.'))),
     h('div', { class: 'panel' },
-      h('h2', {}, 'Что не трогать'),
-      field('Не трогать совсем — слова в имени', textInput(draft.protect.keep_keywords.join(', '),
-        (v) => { draft.protect.keep_keywords = splitList(v); }), 'Такие файлы не удаляются и не раскладываются. Например: pw2'),
-      field('Не трогать совсем — папки и файлы', textArea(draft.protect.paths.join('\n'),
-        (v) => { draft.protect.paths = splitLines(v); }, 3), 'Каждый путь с новой строки, например B:/PW2_database'),
-      field('Не удалять, но раскладывать можно — слова в имени', textInput(draft.protect.name_keywords.join(', '),
-        (v) => { draft.protect.name_keywords = splitList(v); }), 'Паспорта, договоры, сертификаты — только в отчёт, не на удаление.')),
+      h('h2', {}, t('Что не трогать')),
+      field(t('Не трогать совсем — слова в имени'), textInput(draft.protect.keep_keywords.join(', '),
+        (v) => { draft.protect.keep_keywords = splitList(v); }), t('Такие файлы не удаляются и не раскладываются. Например: pw2')),
+      field(t('Не трогать совсем — папки и файлы'), textArea(draft.protect.paths.join('\n'),
+        (v) => { draft.protect.paths = splitLines(v); }, 3), t('Каждый путь с новой строки, например B:/PW2_database')),
+      field(t('Не удалять, но раскладывать можно — слова в имени'), textInput(draft.protect.name_keywords.join(', '),
+        (v) => { draft.protect.name_keywords = splitList(v); }), t('Паспорта, договоры, сертификаты — только в отчёт, не на удаление.'))),
     h('div', { class: 'panel' },
-      h('h2', {}, '«Приступай»'),
-      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Когда закончит'), after),
-      toggle(draft.night.auto_delete, 'Проверенные копии в Загрузках и на Рабочем столе удалять сразу (сверив с оригиналом)',
+      h('h2', {}, t('«Приступай»')),
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('Когда закончит')), after),
+      toggle(draft.night.auto_delete, t('Проверенные копии в Загрузках и на Рабочем столе удалять сразу (сверив с оригиналом)'),
         (on) => { draft.night.auto_delete = on; }),
-      toggle(draft.night.drives, 'Искать мусор и копии на всех дисках, а не только в личных папках',
+      toggle(draft.night.drives, t('Искать мусор и копии на всех дисках, а не только в личных папках'),
         (on) => { draft.night.drives = on; }),
-      field('Какие папки раскладывать', textArea(draft.night.sort_folders.join('\n'),
+      field(t('Какие папки раскладывать'), textArea(draft.night.sort_folders.join('\n'),
         (v) => { draft.night.sort_folders = splitLines(v); }, 3),
-        'downloads, desktop, documents или путь — каждая с новой строки. Подпапки переносятся только в Загрузках и на Рабочем столе.')),
+        t('downloads, desktop, documents или путь — каждая с новой строки. Подпапки переносятся только в Загрузках и на Рабочем столе.'))),
   );
   markDirty();
 }
@@ -800,7 +840,7 @@ async function loadSettings() {
   try {
     state.settings = await api('/api/settings');
   } catch (error) {
-    $('#settings-body').replaceChildren(h('p', { class: 'errors' }, `Не удалось загрузить: ${error.message}`));
+    $('#settings-body').replaceChildren(h('p', { class: 'errors' }, t('Не удалось загрузить: {0}', error.message)));
     return;
   }
   state.draft = structuredClone(state.settings);
@@ -812,11 +852,13 @@ function bindSettings() {
   $('#btn-settings-save').addEventListener('click', async () => {
     const button = $('#btn-settings-save');
     button.disabled = true;
+    const languageChanged = state.draft.ui.language !== state.settings.ui.language;
     try {
       state.settings = await api('/api/settings', state.draft);
+      if (languageChanged) { location.reload(); return; }  // окно — сразу на новом языке
       state.draft = structuredClone(state.settings);
       renderSettings();
-      toast('Сохранено.');
+      toast(t('Сохранено.'));
       refreshStatus();
     } catch (error) {
       toast(error.message, true);
@@ -834,6 +876,7 @@ function bindSettings() {
 }
 
 // ================================================================ старт
+translateStatic();
 bindTabs();
 bindHome();
 bindReview();

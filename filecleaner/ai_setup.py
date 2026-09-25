@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .ai import _OPENER, LocalAI
+from .i18n import tr
 from .rules import Rules
 
 OLLAMA_SITE = "https://ollama.com/download"
@@ -65,7 +66,7 @@ def pull_model(rules: Rules, progress: Callable[[str, float | None], None]) -> N
     """Скачивает модель через Ollama (POST /api/pull) и сообщает ход: (что делает, доля 0..1 или None)."""
     ai = LocalAI(rules)
     if not ai.local:
-        raise RuntimeError("Адрес модели не на этом компьютере — скачивать не буду.")
+        raise RuntimeError(tr("Адрес модели не на этом компьютере — скачивать не буду."))
     body = json.dumps({"model": ai.model, "stream": True}).encode("utf-8")
     request = urllib.request.Request(ai.url + "/api/pull", data=body, headers={"Content-Type": "application/json"})
     try:
@@ -79,4 +80,4 @@ def pull_model(rules: Rules, progress: Callable[[str, float | None], None]) -> N
                 total, done = step.get("total"), step.get("completed")
                 progress(str(step.get("status", "")), done / total if total and done is not None else None)
     except urllib.error.URLError as exc:
-        raise RuntimeError("Ollama не отвечает — запусти её и попробуй снова.") from exc
+        raise RuntimeError(tr("Ollama не отвечает — запусти её и попробуй снова.")) from exc

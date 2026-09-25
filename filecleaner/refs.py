@@ -17,6 +17,7 @@ from pathlib import Path
 
 from . import config
 from .fsutil import is_under, long_path, path_is_link
+from .i18n import tr
 from .winutil import NO_WINDOW, create_junction
 
 try:
@@ -92,7 +93,7 @@ def scan_references(prefixes: list[Path], progress: Progress = _quiet, seconds: 
             refs.setdefault(os.path.normcase(path), set()).add(label)
 
     if winreg is not None:
-        progress("Смотрю, какие программы помнят эти файлы (реестр)…")
+        progress(tr("Смотрю, какие программы помнят эти файлы (реестр)…"))
 
         def walk_registry(key_path: str) -> None:
             if time.time() > deadline:
@@ -125,7 +126,7 @@ def scan_references(prefixes: list[Path], progress: Progress = _quiet, seconds: 
 
         walk_registry("Software")
 
-    progress("Смотрю, какие программы помнят эти файлы (настройки программ)…")
+    progress(tr("Смотрю, какие программы помнят эти файлы (настройки программ)…"))
     for base in (config.APPDATA, config.LOCALAPPDATA):
         for dirpath, dirnames, filenames in os.walk(base):
             if time.time() > deadline:
