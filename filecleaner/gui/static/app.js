@@ -128,6 +128,7 @@ const state = {
   busy: false,
   settings: null,          // как сохранено
   draft: null,             // что сейчас в форме
+  aiSetup: null,           // установлена ли Ollama, запущена ли, есть ли модель
 };
 
 // ================================================================ вкладки
@@ -171,6 +172,9 @@ async function refreshStatus(first = false) {
     return;
   }
   renderStatus();
+  const ai = state.status.ai;
+  if (ai.enabled && !(ai.local && ai.available)) refreshAiSetup();
+  else $('#ai-panel').hidden = true;
   const task = state.status.task;
   if (task && task.running && !taskTimer) {
     state.task = task;
@@ -203,6 +207,88 @@ function renderStatus() {
       line.append(' ', h('button', { type: 'button', class: 'link', onclick: () => openReport(last.report) }, 'Отчёт'));
     }
   }
+}
+
+// ---------------------------------------------------------------- первый запуск ИИ
+async function refreshAiSetup() {
+  try { state.aiSetup = await api('/api/ai-setup'); } catch { return; }
+  renderAiSetup();
+}
+
+function setupStep(done, title, hint, action) {
+  return h('li', { class: done ? 'done' : 'todo' },
+    h('span', { class: 'mark', 'aria-hidden': 'true' }, done ? '✓' : '·'),
+    h('div', {}, h('strong', {}, title), h('span', { class: 'sr-only' }, done ? ' — готово' : ' — нужно сделать'),
+      hint ? h('span', { class: 'sub' }, hint) : null),
+    action);
+}
+
+function renderAiSetup() {
+  const setup = state.aiSetup;
+  const panel = $('#ai-panel');
+  panel.hidden = !setup || !setup.enabled || setup.ready;
+  if (panel.hidden) return;
+  const pulling = Boolean(state.task && state.task.running && state.task.kind === 'pull');
+  const button = (label, onclick, disabled = false) => h('button', {
+    type: 'button', class: 'btn small primary', onclick, disabled,
+  }, label);
+  let steps;
+  if (!setup.local) {
+    steps = [setupStep(false, 'Адрес модели не на этом компьютере',
+      'Ради приватности ИИ выключен: файлы не должны уходить в сеть. Верни адрес http://localhost:11434 в файле правил.')];
+  } else {
+    steps = [
+      setupStep(setup.installed, 'Ollama установлена',
+        setup.installed ? null : 'Скачай и установи её с официального сайта, потом вернись сюда — я проверю сам.',
+        setup.installed ? null : button('Открыть сайт Ollama', () => api('/api/open', { what: 'ollama-site' })
+          .catch((e) => toast(e.message, true)))),
+      setupStep(setup.running, 'Ollama запущена',
+        setup.running ? null : 'Она работает в фоне, значок — возле часов.',
+        !setup.running && setup.installed ? button('Запустить Ollama', startOllama) : null),
+      setupStep(setup.has_model, `Модель ${setup.model} скачана`,
+        setup.has_model ? null
+          : setup.running ? 'Около 4,7 ГБ, скачивается один раз.' : 'Проверю, когда Ollama запустится.',
+        !setup.has_model && setup.running
+          ? button(pulling ? 'Скачиваю…' : 'Скачать модель', () => startTask('/api/ai/pull', {}), pulling) : null),
+    ];
+  }
+  $('#ai-steps').replaceChildren(...steps);
+}
+
+async function startOllama() {
+  try {
+    const result = await api('/api/ai/start', {});
+    if (!result.started) { toast('Не нашёл Ollama — установи её с сайта.', true); return; }
+    toast('Запускаю Ollama — это займёт несколько секунд.');
+    for (let i = 0; i < 10; i += 1) {  // проверяем, поднялась ли
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await refreshAiSetup();
+      if (state.aiSetup && state.aiSetup.running) break;
+    }
+    refreshStatus();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function bindAiSetup() {
+  $('#btn-ai-recheck').addEventListener('click', async () => { await refreshAiSetup(); refreshStatus(); });
+  $('#btn-ai-off').addEventListener('click', async () => {
+    try {
+      await api('/api/ai/disable', {});
+      toast('ИИ выключен: раскладываю только по правилам. Включить можно в «Настройках».');
+      state.settings = null;
+      refreshStatus();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
+  $('#ai-status').addEventListener('click', () => {
+    const ai = state.status && state.status.ai;
+    if (ai && !ai.enabled) { showView('settings'); return; }
+    showView('home');
+    if (!$('#ai-panel').hidden) $('#ai-panel').focus();
+  });
 }
 
 function setBusy(busy) {
@@ -246,6 +332,12 @@ function renderTask() {
   setBusy(true);
   $('#task-title').textContent = task.title;
   $('#task-progress').textContent = task.progress || 'Работаю…';
+  const bar = $('#task-bar');
+  const known = typeof task.fraction === 'number';
+  bar.classList.toggle('determinate', known);
+  bar.firstElementChild.style.width = known ? `${Math.round(task.fraction * 100)}%` : '';
+  if (known) bar.setAttribute('aria-valuenow', String(Math.round(task.fraction * 100)));
+  else bar.removeAttribute('aria-valuenow');
   const log = $('#task-log');
   log.replaceChildren(...task.log.slice(-14).map((line) => h('li', {}, line)));
   log.scrollTop = log.scrollHeight;
@@ -259,6 +351,9 @@ function onTaskFinished(task, quiet = false) {
     state.plan = task.result;
     state.result = null;
     renderPlan();
+  }
+  if (task.kind === 'pull' && !task.error && !quiet) {
+    toast('Модель скачана — ИИ готов раскладывать.');
   }
   if (task.kind === 'night' && task.result) {
     state.result = task.result;
@@ -743,6 +838,7 @@ bindTabs();
 bindHome();
 bindReview();
 bindSettings();
+bindAiSetup();
 if (VIEWS.includes(HASH.get('view'))) showView(HASH.get('view'));
 refreshStatus(true);
 setInterval(refreshStatus, 5000);  // заодно сигнал серверу, что окно открыто

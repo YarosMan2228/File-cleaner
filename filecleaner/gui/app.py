@@ -18,7 +18,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .. import __version__, config, journal, night, review, settings
+from .. import __version__, ai_setup, config, journal, night, review, settings
 from ..ai import LocalAI
 from ..analyzers import Finding
 from ..fsutil import display, is_under
@@ -52,6 +52,7 @@ class Task:
         self.started = time.time()
         self.finished: float | None = None
         self.progress = ""
+        self.fraction: float | None = None  # 0..1, если известно, сколько осталось (скачивание модели)
         self.log: list[str] = []
         self.result: dict | None = None
         self.error: str | None = None
@@ -68,7 +69,7 @@ class Task:
     def snapshot(self) -> dict:
         return {
             "kind": self.kind, "title": self.title, "running": self.running,
-            "started": self.started, "finished": self.finished, "progress": self.progress,
+            "started": self.started, "finished": self.finished, "progress": self.progress, "fraction": self.fraction,
             "log": list(self.log), "result": self.result, "error": self.error,
         }
 
@@ -277,6 +278,8 @@ class App:
             if not ours or target.suffix.lower() != ".html" or not target.exists():
                 raise ApiError(HTTPStatus.BAD_REQUEST, "Это не отчёт программы.")
             os.startfile(target)  # type: ignore[attr-defined]  # откроется в браузере
+        elif what == "ollama-site":
+            webbrowser.open(ai_setup.OLLAMA_SITE)  # официальный сайт; сам установщик не скачиваем
         elif what == "rules":
             subprocess.Popen(["notepad.exe", str(ensure_user_rules())])  # для тех, кто хочет править руками
         elif what == "reveal":
@@ -286,6 +289,31 @@ class App:
         else:
             raise ApiError(HTTPStatus.BAD_REQUEST, "Непонятно, что открыть.")
         return {"ok": True}
+
+    def pull_model(self) -> dict:
+        def work(task: Task) -> dict:
+            model = LocalAI(self.load_rules()).model
+            task.say(f"Скачиваю модель {model} через Ollama — это несколько гигабайт, можно заниматься своим.")
+            last = [""]
+
+            def progress(step: str, fraction: float | None) -> None:
+                if fraction is not None:  # шаги без размеров (проверка, запись) шкалу не сбрасывают
+                    task.fraction = fraction
+                task.progress = f"{step} — {fraction:.0%}" if fraction is not None else step
+                if step != last[0]:
+                    last[0] = step
+                    task.say(step)
+
+            ai_setup.pull_model(self.load_rules(), progress)
+            task.fraction = 1.0
+            task.say("Готово: модель на месте.")
+            return {"model": model}
+        return self.start("pull", "Скачиваю модель для ИИ", work)
+
+    def disable_ai(self) -> dict:
+        data = settings.read(self.load_rules())
+        data["ai"]["enabled"] = False
+        return self.save_settings(data)
 
     def save_settings(self, body: dict) -> dict:
         try:
@@ -305,7 +333,8 @@ class App:
     def get(self, path: str) -> dict | list:
         routes = {"/api/status": self.status, "/api/review": review_list, "/api/history": history_list,
                   "/api/task": lambda: self.task.snapshot() if self.task else None,
-                  "/api/settings": lambda: settings.read(self.load_rules())}
+                  "/api/settings": lambda: settings.read(self.load_rules()),
+                  "/api/ai-setup": lambda: ai_setup.status(self.load_rules())}
         if path not in routes:
             raise ApiError(HTTPStatus.NOT_FOUND, "Нет такого раздела.")
         return routes[path]()
@@ -325,6 +354,14 @@ class App:
             return self.reveal_item(str(body.get("batch", "")), str(body.get("id", "")))
         if path == "/api/settings":
             return self.save_settings(body)
+        if path == "/api/ai/start":
+            started = ai_setup.start_ollama()
+            self._ai = None
+            return {"started": started}
+        if path == "/api/ai/pull":
+            return self.pull_model()
+        if path == "/api/ai/disable":
+            return self.disable_ai()
         if path == "/api/stay-awake":
             if self.task is not None:
                 self.task.stop.set()

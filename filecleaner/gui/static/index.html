@@ -17,12 +17,23 @@
     <button type="button" role="tab" id="tab-history" aria-controls="view-history" aria-selected="false" tabindex="-1">История</button>
     <button type="button" role="tab" id="tab-settings" aria-controls="view-settings" aria-selected="false" tabindex="-1">Настройки</button>
   </nav>
-  <p class="ai" id="ai-status" role="status"><span class="dot" aria-hidden="true"></span><span id="ai-text">ИИ: проверяю…</span></p>
+  <button type="button" class="ai" id="ai-status"><span class="dot" aria-hidden="true"></span><span id="ai-text">ИИ: проверяю…</span></button>
 </header>
 
 <main>
   <!-- ============================================================ Главная -->
   <section id="view-home" role="tabpanel" aria-labelledby="tab-home">
+    <div class="panel" id="ai-panel" tabindex="-1" hidden>
+      <div class="panel-head">
+        <h2>Настрой ИИ</h2>
+        <button type="button" class="link" id="btn-ai-off">Работать без ИИ</button>
+      </div>
+      <p class="lead">ИИ раскладывает по учёбе и работе то, что не узнали правила. Он работает на этом
+        компьютере через бесплатную программу Ollama — файлы никуда не уходят.</p>
+      <ol class="setup" id="ai-steps"></ol>
+      <div class="actions"><button type="button" class="btn small" id="btn-ai-recheck">Проверить снова</button></div>
+    </div>
+
     <div class="panel intro">
       <h1>Приступай</h1>
       <p class="lead">Уберу мусор и лишние копии на всех дисках и разложу Загрузки, Рабочий стол и Документы

@@ -4,12 +4,13 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
 from conftest import write
 
-from filecleaner import config, journal, review
+from filecleaner import ai_setup, config, journal, review
 from filecleaner.analyzers import Finding
 from filecleaner.gui.app import App, Server, Task
 from filecleaner.rules import Rules
@@ -139,3 +140,67 @@ def test_settings_through_the_window(gui):
     current["sectors"].append({"name": "Изображения", "description": "", "keywords": [], "sources": [], "types": []})
     status, data = call(gui, "/api/settings", current)
     assert status == 400 and "папка типа" in data["error"]
+
+
+# ======================================================================= первый запуск ИИ
+class FakeOllama(BaseHTTPRequestHandler):
+    models: list[str] = []
+
+    def log_message(self, *args):
+        pass
+
+    def _reply(self, body: bytes, kind: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):  # /api/tags
+        self._reply(json.dumps({"models": [{"name": m} for m in FakeOllama.models]}).encode(), "application/json")
+
+    def do_POST(self):  # /api/pull — по строке JSON на шаг, как настоящая Ollama
+        request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        steps = [{"status": "pulling manifest"}, {"status": "pulling 2bada8a7", "total": 100, "completed": 40},
+                 {"status": "pulling 2bada8a7", "total": 100, "completed": 100}, {"status": "success"}]
+        FakeOllama.models.append(request["model"])
+        self._reply(b"".join(json.dumps(s).encode() + b"\n" for s in steps), "application/x-ndjson")
+
+
+@pytest.fixture
+def fake_ollama():
+    server = HTTPServer(("127.0.0.1", 0), FakeOllama)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    FakeOllama.models = []
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+def wait_task(server: Server) -> dict:
+    for _ in range(100):
+        task = call(server, "/api/task")[1]
+        if not task["running"]:
+            return task
+        time.sleep(0.05)
+    raise AssertionError("задача не закончилась")
+
+
+def test_first_run_downloads_the_model(gui, rules, fake_ollama):
+    rules.data["ai"].update(enabled=True, url=fake_ollama, model="qwen2.5:7b")
+    setup = call(gui, "/api/ai-setup")[1]
+    assert setup["running"] and not setup["has_model"] and not setup["ready"]
+
+    assert call(gui, "/api/ai/pull", {})[0] == 200
+    task = wait_task(gui)
+    assert task["error"] is None and task["fraction"] == 1.0 and "Готово" in task["log"][-1]
+    assert call(gui, "/api/ai-setup")[1]["ready"]
+
+
+def test_without_ollama_ai_can_be_switched_off(gui, rules, monkeypatch):
+    monkeypatch.setattr(ai_setup, "ollama_app", lambda: None)
+    monkeypatch.setattr(ai_setup.shutil, "which", lambda name: None)
+    rules.data["ai"].update(enabled=True, url="http://127.0.0.1:9")
+    setup = call(gui, "/api/ai-setup")[1]
+    assert not setup["installed"] and not setup["running"] and not setup["ready"]
+    assert call(gui, "/api/ai/start", {})[1] == {"started": False}
+    assert call(gui, "/api/ai/disable", {})[0] == 200 and Rules.load().get("ai.enabled") is False
