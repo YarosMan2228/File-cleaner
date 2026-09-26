@@ -113,13 +113,16 @@ def russian_left(data, skip: set[str] = frozenset()) -> list[str]:
 def test_english_window_speaks_english(sandbox, rules, monkeypatch):
     from test_gui import call, wait_task
 
-    from filecleaner import config
+    from test_schedule import FakeScheduler
+
+    from filecleaner import config, schedule
     from filecleaner.gui.app import App, Server
 
     rules.data["ui"]["language"] = "en"
     rules.data["night"]["drives"] = False
     folders = {name.lower(): sandbox / name for name in ("Downloads", "Documents", "Desktop")}
     monkeypatch.setattr(config, "user_folders", lambda: folders)
+    monkeypatch.setattr(schedule, "_schtasks", FakeScheduler())
     dl = sandbox / "Downloads"
     write(dl / "report.pdf", b"r" * 5000)
     write(dl / "report (1).pdf", b"r" * 5000)
@@ -169,3 +172,21 @@ def test_texts_saved_in_russian_are_shown_in_english():
     assert i18n.retranslate("Мой сектор «Учёба»") == "Мой сектор «Учёба»"      # не из программы — как есть
     i18n.set_language("ru")
     assert i18n.retranslate(folder) == folder
+
+
+def test_default_sectors_follow_the_language(sandbox, monkeypatch):
+    """Секторы по умолчанию — это имена папок: у англоязычного они по-английски; свои секторы не переводятся."""
+    import tomllib
+
+    from filecleaner.rules import Rules, ensure_user_rules
+
+    monkeypatch.setattr(i18n, "detect", lambda: "en")  # Windows по-английски, в правилах language = "auto"
+    assert [s["name"] for s in Rules.load().sectors] == ["Study", "Work", "Virtual machines"]
+
+    path = ensure_user_rules()  # копия правил для правки руками — тоже по-английски
+    text = path.read_text(encoding="utf-8")
+    assert [s["name"] for s in tomllib.loads(text)["sector"]] == ["Study", "Work", "Virtual machines"]
+    assert "[links]" in text and "# ─── Чтобы программы" in text  # остальное и пояснения на месте
+
+    path.write_text('[[sector]]\nname = "Учёба"\nkeywords = ["lab"]\n', encoding="utf-8")
+    assert [s["name"] for s in Rules.load().sectors] == ["Учёба"]

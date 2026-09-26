@@ -77,7 +77,7 @@ def _text(value, what: str, limit: int) -> str:
 def _domain(value: str) -> str:
     text = re.sub(r"^https?://", "", value.strip().lower()).removeprefix("www.").split("/", 1)[0]
     if not _DOMAIN.match(text):
-        raise SettingsError(tr("Сайт «{value}» — не похоже на адрес сайта (нужно вроде rtu.lv).", value=value))
+        raise SettingsError(tr("Сайт «{value}» — не похоже на адрес сайта (нужно вроде coursera.org).", value=value))
     return text
 
 

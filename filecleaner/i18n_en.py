@@ -251,7 +251,6 @@ EN: dict[str, str] = {
     "{what}: нужен список.": "{what}: a list is expected.",
     "{what}: «{text}…» — слишком длинно.": "{what}: «{text}…» is too long.",
     "{what}: слишком длинно (больше {limit} знаков).": "{what}: too long (more than {limit} characters).",
-    "Сайт «{value}» — не похоже на адрес сайта (нужно вроде rtu.lv).": "Site «{value}» does not look like a web address (like rtu.lv).",
     "Секторы: нужен список.": "Sectors: a list is expected.",
     "Сектор записан неправильно.": "A sector is written incorrectly.",
     "Название сектора": "Sector name",
@@ -284,4 +283,22 @@ EN: dict[str, str] = {
     "Утверждение: {name}": "Approval: {name}",
     "Сортировка {folder}": "Sorting {folder}",
     "Сжатие {folder}": "Compression {folder}",
+    # schedule: ночной запуск
+    "File Cleaner: чистка и сортировка каждую ночь («Приступай»).": "File Cleaner: cleaning and sorting every night («Clean up»).",
+    "Время — в виде 03:00.": "Time must look like 03:00.",
+    "Планировщик Windows не принял задачу: {error}": "Windows Task Scheduler rejected the task: {error}",
+    "Не получилось убрать задачу из Планировщика: {error}": "Could not remove the task from Task Scheduler: {error}",
+    # cli: ночной запуск
+    "Ночной запуск выключен.": "Nightly run turned off.",
+    ", будит компьютер": ", wakes the computer",
+    "«Приступай» запускается сам каждую ночь в {time}{wake}.": "«Clean up» runs by itself every night at {time}{wake}.",
+    "Ночной запуск выключен. Включить: filecleaner schedule --at 03:00": "Nightly run is off. To turn it on: filecleaner schedule --at 03:00",
+    # секторы по умолчанию
+    "Сайт «{value}» — не похоже на адрес сайта (нужно вроде coursera.org).": "Site «{value}» does not look like a web address (like coursera.org).",
+    "Учёба": "Study",
+    "Работа": "Work",
+    "Виртуалки": "Virtual machines",
+    "учёба: лекции, конспекты, лабораторные и практические работы, домашние задания, курсовые и дипломные работы, рефераты, материалы курсов": "study: lectures, notes, lab and practical work, homework, coursework and theses, essays, course materials",
+    "работа: рабочие документы, отчёты, презентации, таблицы, чертежи и материалы проектов": "work: work documents, reports, presentations, spreadsheets, drawings and project materials",
+    "образы дисков и виртуальные машины": "disk images and virtual machines",
 }

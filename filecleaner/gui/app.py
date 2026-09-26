@@ -18,7 +18,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .. import __version__, ai_setup, config, i18n, journal, night, review, settings
+from .. import __version__, ai_setup, config, i18n, journal, night, review, schedule, settings
 from ..ai import LocalAI
 from ..analyzers import Finding
 from ..fsutil import display, is_under
@@ -324,14 +324,19 @@ class App:
         data["ai"]["enabled"] = False
         return self.save_settings(data)
 
+    def read_settings(self) -> dict:
+        return {**settings.read(self.load_rules()), "schedule": schedule.status()}
+
     def save_settings(self, body: dict) -> dict:
         try:
             settings.save(body)
-        except settings.SettingsError as exc:
+            if isinstance(body.get("schedule"), dict):  # задача в Планировщике — отдельно от файла правил
+                schedule.apply(body["schedule"])
+        except (settings.SettingsError, schedule.ScheduleError) as exc:
             raise ApiError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
         self._ai = None  # модель или «включён» могли поменяться
         self.apply_language()
-        return settings.read(self.load_rules())
+        return self.read_settings()
 
     def reveal_item(self, batch_path: str, item_id: str) -> dict:
         batch = next((b for b in review.find_batches() if str(b.path) == batch_path), None)
@@ -343,7 +348,7 @@ class App:
     def get(self, path: str) -> dict | list:
         routes = {"/api/status": self.status, "/api/review": review_list, "/api/history": history_list,
                   "/api/task": lambda: self.task.snapshot() if self.task else None,
-                  "/api/settings": lambda: settings.read(self.load_rules()),
+                  "/api/settings": self.read_settings,
                   "/api/ai-setup": lambda: ai_setup.status(self.load_rules())}
         if path not in routes:
             raise ApiError(HTTPStatus.NOT_FOUND, tr("Нет такого раздела."))

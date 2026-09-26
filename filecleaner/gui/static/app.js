@@ -719,6 +719,13 @@ function textArea(value, onChange, rows = 3) {
   return area;
 }
 
+function timeInput(value, onChange) {
+  const input = h('input', { type: 'time', required: true });
+  input.value = value || '03:00';
+  input.addEventListener('input', () => { if (input.value) { onChange(input.value); markDirty(); } });
+  return input;
+}
+
 function toggle(checked, label, onChange) {
   const box = h('input', { type: 'checkbox' });
   box.checked = Boolean(checked);
@@ -743,9 +750,9 @@ function sectorCard(sector, index, types) {
       t('Чем подробнее, тем точнее ИИ раскладывает: чем ты тут занимаешься, какие проекты, какие слова встречаются.')),
     h('div', { class: 'grid-2' },
       field(t('Ключевые слова в имени файла'), textInput(sector.keywords.join(', '), (v) => { sector.keywords = splitList(v); }),
-        t('Через запятую: rtu, lab, домашка')),
+        t('Через запятую: lab, лекция, домашка')),
       field(t('Сайты, откуда скачано'), textInput(sector.sources.join(', '), (v) => { sector.sources = splitList(v); }),
-        t('Через запятую: rtu.lv, ortus.rtu.lv'))),
+        t('Через запятую: coursera.org, github.com'))),
     h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('Все файлы этих типов — сюда')),
       h('div', { class: 'types' }, typeBoxes)),
     field(t('Где хранить (необязательно)'), textInput(sector.target, (v) => { sector.target = v; },
@@ -817,13 +824,21 @@ function renderSettings() {
     h('div', { class: 'panel' },
       h('h2', {}, t('Что не трогать')),
       field(t('Не трогать совсем — слова в имени'), textInput(draft.protect.keep_keywords.join(', '),
-        (v) => { draft.protect.keep_keywords = splitList(v); }), t('Такие файлы не удаляются и не раскладываются. Например: pw2')),
+        (v) => { draft.protect.keep_keywords = splitList(v); }), t('Такие файлы не удаляются и не раскладываются. Например: thesis_final')),
       field(t('Не трогать совсем — папки и файлы'), textArea(draft.protect.paths.join('\n'),
-        (v) => { draft.protect.paths = splitLines(v); }, 3), t('Каждый путь с новой строки, например B:/PW2_database')),
+        (v) => { draft.protect.paths = splitLines(v); }, 3), t('Каждый путь с новой строки, например D:/Проекты/База')),
       field(t('Не удалять, но раскладывать можно — слова в имени'), textInput(draft.protect.name_keywords.join(', '),
         (v) => { draft.protect.name_keywords = splitList(v); }), t('Паспорта, договоры, сертификаты — только в отчёт, не на удаление.'))),
     h('div', { class: 'panel' },
       h('h2', {}, t('«Приступай»')),
+      toggle(draft.schedule.enabled, t('Запускать сам каждую ночь'), (on) => { draft.schedule.enabled = on; }),
+      h('div', { class: 'grid-2' },
+        field(t('Во сколько'), timeInput(draft.schedule.time, (v) => { draft.schedule.time = v; })),
+        h('div', { class: 'field' }, h('span', { class: 'field-label' }, ' '),
+          toggle(draft.schedule.wake, t('Будить компьютер, если он спит'), (on) => { draft.schedule.wake = on; }))),
+      h('p', { class: 'hint' }, t('Задача в Планировщике Windows: запускается, только когда ноутбук на зарядке, '
+        + 'и не догоняет пропущенный запуск днём. Чтобы компьютер просыпался, в электропитании должны быть '
+        + 'разрешены таймеры пробуждения.')),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('Когда закончит')), after),
       toggle(draft.night.auto_delete, t('Проверенные копии в Загрузках и на Рабочем столе удалять сразу (сверив с оригиналом)'),
         (on) => { draft.night.auto_delete = on; }),

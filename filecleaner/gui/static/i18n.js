@@ -169,9 +169,9 @@ window.I18N_EN = {
   'Чем подробнее, тем точнее ИИ раскладывает: чем ты тут занимаешься, какие проекты, какие слова встречаются.':
     'The more detail, the better AI sorts: what you do here, which projects, which words come up.',
   'Ключевые слова в имени файла': 'Keywords in the file name',
-  'Через запятую: rtu, lab, домашка': 'Comma-separated: rtu, lab, homework',
+  'Через запятую: lab, лекция, домашка': 'Comma-separated: lab, lecture, homework',
   'Сайты, откуда скачано': 'Sites the files come from',
-  'Через запятую: rtu.lv, ortus.rtu.lv': 'Comma-separated: rtu.lv, ortus.rtu.lv',
+  'Через запятую: coursera.org, github.com': 'Comma-separated: coursera.org, github.com',
   'Все файлы этих типов — сюда': 'All files of these types go here',
   'Где хранить (необязательно)': 'Where to keep it (optional)',
   'Сектор': 'Sector',
@@ -196,9 +196,9 @@ window.I18N_EN = {
     'A couple of sentences: where you study, what you work as, which projects. After you edit descriptions, AI looks at the files again on the next run.',
   'Что не трогать': 'What not to touch',
   'Не трогать совсем — слова в имени': 'Never touch — words in the name',
-  'Такие файлы не удаляются и не раскладываются. Например: pw2': 'Such files are never deleted or sorted. For example: pw2',
+  'Такие файлы не удаляются и не раскладываются. Например: thesis_final': 'Such files are never deleted or sorted. For example: thesis_final',
   'Не трогать совсем — папки и файлы': 'Never touch — folders and files',
-  'Каждый путь с новой строки, например B:/PW2_database': 'One path per line, for example B:/PW2_database',
+  'Каждый путь с новой строки, например D:/Проекты/База': 'One path per line, for example D:/Projects/Database',
   'Не удалять, но раскладывать можно — слова в имени': 'Do not delete, but sorting is fine — words in the name',
   'Паспорта, договоры, сертификаты — только в отчёт, не на удаление.': 'Passports, contracts, certificates — report only, never deleted.',
   '«Приступай»': '«Clean up»',
@@ -210,4 +210,9 @@ window.I18N_EN = {
   'downloads, desktop, documents или путь — каждая с новой строки. Подпапки переносятся только в Загрузках и на Рабочем столе.':
     'downloads, desktop, documents or a path — one per line. Subfolders are moved only in Downloads and on the Desktop.',
   'Сохранено.': 'Saved.',
+  'Запускать сам каждую ночь': 'Run by itself every night',
+  'Во сколько': 'At what time',
+  'Будить компьютер, если он спит': 'Wake the computer if it is asleep',
+  'Задача в Планировщике Windows: запускается, только когда ноутбук на зарядке, и не догоняет пропущенный запуск днём. Чтобы компьютер просыпался, в электропитании должны быть разрешены таймеры пробуждения.':
+    'A Windows Task Scheduler task: it runs only while a laptop is plugged in and does not catch up on a missed run during the day. For the computer to wake up, wake timers must be allowed in the power settings.',
 };

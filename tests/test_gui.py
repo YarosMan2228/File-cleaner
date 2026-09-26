@@ -10,10 +10,11 @@ from pathlib import Path
 import pytest
 from conftest import write
 
-from filecleaner import ai_setup, config, journal, review
+from filecleaner import ai_setup, config, journal, review, schedule
 from filecleaner.analyzers import Finding
 from filecleaner.gui.app import App, Server, Task
 from filecleaner.rules import Rules
+from test_schedule import FakeScheduler
 
 NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -51,6 +52,7 @@ def gui(sandbox, rules, monkeypatch):
     rules.data["night"]["drives"] = False
     folders = {name.lower(): sandbox / name for name in ("Downloads", "Documents", "Desktop")}
     monkeypatch.setattr(config, "user_folders", lambda: folders)
+    monkeypatch.setattr(schedule, "_schtasks", FakeScheduler())  # настоящий Планировщик не трогаем
     server = Server(App(lambda: rules))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield server
@@ -135,8 +137,10 @@ def test_settings_through_the_window(gui):
     status, current = call(gui, "/api/settings")
     assert status == 200 and current["sectors"] and "Документы" in [kind["id"] for kind in current["types"]]
     current["ai"]["min_confidence"] = 90
-    status, _ = call(gui, "/api/settings", current)
+    current["schedule"] = {"enabled": True, "time": "04:00", "wake": True}
+    status, saved = call(gui, "/api/settings", current)
     assert status == 200 and Rules.load().get("ai.min_confidence") == 90    # записано в файл правил
+    assert saved["schedule"] == {"enabled": True, "time": "04:00", "wake": True}   # задача в Планировщике
     current["sectors"].append({"name": "Изображения", "description": "", "keywords": [], "sources": [], "types": []})
     status, data = call(gui, "/api/settings", current)
     assert status == 400 and "папка типа" in data["error"]

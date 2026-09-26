@@ -36,6 +36,15 @@ def sandbox(tmp_path, monkeypatch):
     return home
 
 
+TEST_SECTORS = [  # свои, чтобы тесты не зависели от секторов по умолчанию
+    {"name": "Учёба", "description": "учёба в университете: лекции, лабораторные, домашние задания",
+     "keywords": ["lab", "lecture", "homework", "лабораторная", "лекция"]},
+    {"name": "Работа", "description": "работа: автоматизация зданий (Siemens Desigo, DCC, BACnet)",
+     "sources": ["siemens.com"], "keywords": ["siemens", "desigo", "dcc", "bacnet"]},
+    {"name": "Виртуалки", "description": "образы дисков и виртуальные машины", "types": ["Образы дисков"]},
+]
+
+
 @pytest.fixture
 def rules(tmp_path):
     """Правила по умолчанию, но без системного мусора и без правки реестра/ярлыков."""
@@ -50,6 +59,7 @@ def rules(tmp_path):
     r.data["links"]["update_shortcuts"] = False
     r.data["ai"]["enabled"] = False
     r.data["ui"]["language"] = "ru"
+    r.data["sector"] = [dict(s) for s in TEST_SECTORS]
     return r
 
 

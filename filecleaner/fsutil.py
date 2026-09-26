@@ -349,7 +349,7 @@ def name_tokens(name: str) -> list[str]:
 def keyword_match(tokens: list[str], keyword: str) -> bool:
     """Слово целиком; длинные ключевые слова (от 4 букв) — ещё и как начало слова.
 
-    Ключевое слово из нескольких частей («pw2» → pw, 2) ищется как те же части подряд в имени.
+    Ключевое слово из нескольких частей («lab2» → lab, 2) ищется как те же части подряд в имени.
     """
     parts = name_tokens(keyword)
     if len(parts) > 1:

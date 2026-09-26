@@ -16,6 +16,9 @@ from .index import Index
 from .rules import Rules, RulesError, ensure_user_rules
 
 # ======================================================================= вывод
+for _name in ("stdout", "stderr"):
+    if getattr(sys, _name) is None:  # без консоли (окно, запуск из Планировщика) потоков вывода нет вовсе
+        setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
 if os.name == "nt" and sys.stdout.isatty():
     os.system("")  # включает цвета ANSI в классической консоли Windows
 _COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
@@ -636,6 +639,27 @@ def cmd_gui(args, rules: Rules, interactive: bool = False) -> int:
     return run(lambda: Rules.load(path), port=args.port, show_window=not args.no_window)
 
 
+def cmd_schedule(args, rules: Rules, interactive: bool = False) -> int:
+    from . import schedule
+
+    try:
+        if args.off:
+            schedule.remove()
+            print(green(tr("Ночной запуск выключен.")))
+        elif args.at:
+            schedule.install(args.at, not args.no_wake)
+    except schedule.ScheduleError as exc:
+        print(red(str(exc)))
+        return 1
+    state = schedule.status()
+    if state["enabled"]:
+        wake = tr(", будит компьютер") if state["wake"] else ""
+        print(tr("«Приступай» запускается сам каждую ночь в {time}{wake}.", time=state["time"], wake=wake))
+    else:
+        print(tr("Ночной запуск выключен. Включить: filecleaner schedule --at 03:00"))
+    return 0
+
+
 def cmd_night(args, rules: Rules, interactive: bool = False) -> int:
     if getattr(args, "after", None):
         rules.data.setdefault("night", {})["after"] = args.after
@@ -742,6 +766,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=func)
         return p
 
+    p = add("schedule", cmd_schedule, "«Приступай» каждую ночь (Планировщик Windows)")
+    p.add_argument("--at", metavar="ЧЧ:ММ", help="во сколько запускать, например 03:00")
+    p.add_argument("--no-wake", action="store_true", help="не будить компьютер ради этого")
+    p.add_argument("--off", action="store_true", help="выключить ночной запуск")
     p = add("gui", cmd_gui, "окно программы: всё кнопками")
     p.add_argument("--no-window", action="store_true", help="не открывать окно — только напечатать адрес")
     p.add_argument("--port", type=int, default=0, help="порт (по умолчанию — любой свободный)")

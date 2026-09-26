@@ -1,12 +1,11 @@
 """Правила «что считать ненужным»: значения по умолчанию + твой rules.toml поверх них."""
 from __future__ import annotations
 
-import shutil
 import tomllib
 from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, i18n
 from .fsutil import parse_size
 
 MODES = ("delete", "review", "report", "off")
@@ -38,6 +37,12 @@ def user_rules_path() -> Path:
     return config.DATA_DIR / "rules.toml"
 
 
+def _in_english(sector: dict) -> dict:
+    """Сектор по умолчанию по-английски: «Учёба» → «Study». Ключевые слова — на обоих языках, как есть."""
+    from .i18n_en import EN
+    return {**sector, **{key: EN.get(sector[key], sector[key]) for key in ("name", "description") if key in sector}}
+
+
 def _merge(base: dict, override: dict) -> None:
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(base.get(key), dict):
@@ -56,12 +61,15 @@ class Rules:
         try:
             data = tomllib.loads(DEFAULT_RULES.read_text(encoding="utf-8"))
             source = Path(path) if path else user_rules_path()
-            used = None
+            used, user = None, {}
             if source.exists():
-                _merge(data, tomllib.loads(source.read_text(encoding="utf-8-sig")))
+                user = tomllib.loads(source.read_text(encoding="utf-8-sig"))
+                _merge(data, user)
                 used = source
         except tomllib.TOMLDecodeError as exc:
             raise RulesError(f"Ошибка в файле правил: {exc}") from exc
+        if "sector" not in user and i18n.resolve(data.get("ui", {}).get("language")) == "en":
+            data["sector"] = [_in_english(s) for s in data.get("sector", [])]  # их имена станут именами папок
         rules = cls(data, used)
         rules.validate()
         return rules
@@ -134,5 +142,10 @@ def ensure_user_rules() -> Path:
     path = user_rules_path()
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(DEFAULT_RULES, path)
+        text = DEFAULT_RULES.read_text(encoding="utf-8")
+        sectors = Rules.load(path).sectors  # на языке программы
+        if sectors != tomllib.loads(text).get("sector"):
+            from .rules_edit import replace_sectors
+            text = replace_sectors(text, sectors)
+        path.write_text(text, encoding="utf-8")
     return path
