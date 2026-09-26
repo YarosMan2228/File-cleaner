@@ -18,7 +18,7 @@ from pathlib import Path
 from . import config
 from .fsutil import is_under, long_path, path_is_link
 from .i18n import tr
-from .winutil import NO_WINDOW, create_junction
+from .winutil import NO_WINDOW, create_junction, system_exe
 
 try:
     import winreg
@@ -354,7 +354,8 @@ def _powershell(script: str, payload: list) -> list:
         ps1.write_text(script, encoding="utf-8-sig")
         inp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         try:
-            subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps1),
+            subprocess.run([system_exe(r"WindowsPowerShell\v1.0\powershell.exe"), "-NoProfile", "-ExecutionPolicy",
+                            "Bypass", "-File", str(ps1),
                             str(inp), str(out)], capture_output=True, timeout=600, creationflags=NO_WINDOW)
         except (OSError, subprocess.SubprocessError):
             return []

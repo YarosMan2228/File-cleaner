@@ -14,6 +14,7 @@ import datetime as dt
 import json
 import re
 import struct
+import unicodedata
 from dataclasses import dataclass
 
 from . import config, ed25519
@@ -58,7 +59,8 @@ def issue(secret: bytes, name: str, issued: dt.date | None = None, edition: int 
 
 def parse(key: str) -> License:
     """Проверяет ключ; ошибка — понятным текстом."""
-    text = re.sub(r"[\s\-]", "", str(key)).upper()
+    # Из письма ключ приходит с чем угодно: переносы, длинные тире, невидимые пробелы — оставляем буквы и цифры.
+    text = re.sub(r"[^0-9A-Za-z]", "", unicodedata.normalize("NFKC", str(key))).upper()
     if not text.startswith(PREFIX):
         raise LicenseError(tr("Это не ключ File Cleaner: он начинается с FC1-."))
     text = text[len(PREFIX):]
@@ -81,11 +83,20 @@ def _path():
 
 
 def _load() -> dict:
+    path = _path()
     try:
-        state = json.loads(_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        state = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(state, dict):
+            return state
+    except FileNotFoundError:
         return {}
-    return state if isinstance(state, dict) else {}
+    except (OSError, ValueError):
+        pass
+    try:  # испорченный файл не затираем пробным периодом: в нём мог быть ключ
+        path.replace(path.with_name(path.name + ".bad"))
+    except OSError:
+        pass
+    return {}
 
 
 def _save(state: dict) -> None:
@@ -108,6 +119,8 @@ def status(today: dt.date | None = None) -> dict:
             pass  # испорченный ключ — как будто его нет
     try:
         started = dt.date.fromisoformat(str(state.get("trial_started")))
+        if started > today:  # начало «в будущем» — часы были переведены вперёд: считаем с сегодня
+            raise ValueError
     except ValueError:
         started = today
         try:

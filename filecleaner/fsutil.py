@@ -270,16 +270,29 @@ def move_path(src: Path | str, dst: Path | str) -> None:
     except OSError as exc:
         if getattr(exc, "winerror", None) != _ERROR_NOT_SAME_DEVICE and exc.errno != errno.EXDEV:
             raise
-    # Другой диск: сначала копия, потом удаление оригинала.
-    if os.path.isdir(s) and not path_is_link(s):
-        shutil.copytree(s, d, symlinks=True)
+    # Другой диск: копия под временным именем, переименование (не перезапишет появившийся за это время файл),
+    # потом удаление оригинала. Если прервут посреди копии — останется «….fc-part», а не полфайла под настоящим именем.
+    part = unique_path(Path(d + ".fc-part"))
+    folder = os.path.isdir(s) and not path_is_link(s)
+    try:
+        if folder:
+            shutil.copytree(s, part, symlinks=True)
+        else:
+            shutil.copy2(s, part)
+        os.rename(part, d)
+    except BaseException:
+        if os.path.lexists(part) and folder:
+            remove_tree(part)
+        elif os.path.lexists(part):
+            remove_file(part)
+        raise
+    if folder:
         try:
             remove_tree(s)
         except OSError as exc:
             raise PartialMoveError(errno.EIO, tr("Скопировано, но оригинал удалился не полностью: {error}", error=exc),
                                    os.fspath(src)) from exc
     else:
-        shutil.copy2(s, d)
         try:
             remove_file(s)
         except OSError:

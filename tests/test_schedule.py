@@ -46,14 +46,16 @@ def test_task_xml_has_the_safe_settings():
     assert settings.find("t:WakeToRun", NS).text == "true"
     assert settings.find("t:DisallowStartIfOnBatteries", NS).text == "true"   # не от батареи
     assert settings.find("t:StartWhenAvailable", NS).text == "false"         # пропущенный запуск днём не догоняет
+    assert settings.find("t:StopIfGoingOnBatteries", NS).text == "false"     # не обрывать посреди переноса
     assert task.find("t:Principals/t:Principal/t:RunLevel", NS).text == "LeastPrivilege"
-    assert task.find("t:Actions/t:Exec/t:Arguments", NS).text.endswith("night --apply --yes")
+    assert task.find("t:Actions/t:Exec/t:Arguments", NS).text.endswith("night --apply --yes --scheduled")
 
 
 def test_apply_creates_changes_and_removes_the_task(scheduler):
     assert schedule.status()["enabled"] is False
     schedule.apply({"enabled": True, "time": "02:15", "wake": False})
-    assert schedule.status() == {"enabled": True, "time": "02:15", "wake": False}
+    state = schedule.status()
+    assert (state["enabled"], state["time"], state["wake"], state["ok"]) == (True, "02:15", False, True)
 
     scheduler.calls.clear()
     schedule.apply({"enabled": True, "time": "02:15", "wake": False})
@@ -71,3 +73,44 @@ def test_runs_without_console(tmp_path):
     result = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1],
                             env={**os.environ, "FILECLEANER_HOME": str(tmp_path)}, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stderr.decode(errors="replace")
+    log = (tmp_path / "logs" / "console.log").read_text(encoding="utf-8")
+    assert log.count("--- ") == 1 and len(log.strip().splitlines()) == 2   # вывод без консоли — в журнале
+
+
+def test_task_of_a_moved_program_is_repaired(scheduler):
+    schedule.apply({"enabled": True, "time": "02:15", "wake": False})
+    scheduler.xml = scheduler.xml.replace(schedule.command()[0], r"C:\Old\File Cleaner.exe")
+    state = schedule.status()
+    assert state["ok"] is False and state["program"] == r"C:\Old\File Cleaner.exe"
+    schedule.apply({"enabled": True, "time": "02:15", "wake": False})
+    assert schedule.status()["ok"] is True                   # программу перенесли — задача запускает эту копию
+    with pytest.raises(schedule.ScheduleError):
+        schedule.install("03:00\n", wake=True)
+
+
+def test_scheduled_night_waits_for_people_and_stops_after_the_trial(sandbox, scheduler, monkeypatch):
+    import datetime as dt
+
+    from filecleaner import cli, config, licensing, night
+
+    monkeypatch.setattr(night, "run_night", lambda *a, **k: pytest.fail("ночь не должна была начаться"))
+    monkeypatch.setattr(night, "wait_for_quiet", lambda log: False)          # засиделись допоздна
+    monkeypatch.setattr(cli, "_night_describe", lambda rules: None)
+    assert cli.main(["night", "--apply", "--yes", "--scheduled"]) == 0      # ночь пропущена, ничего не тронуто
+
+    schedule.apply({"enabled": True, "time": "03:00", "wake": True})
+    licensing._save({"trial_started": (dt.date.today() - dt.timedelta(days=40)).isoformat()})
+    assert cli.main(["night", "--apply", "--yes", "--scheduled"]) == 3
+    assert schedule.status()["enabled"] is False                             # не будить компьютер впустую
+    errors = (config.DATA_DIR / "logs" / "night-errors.log").read_text(encoding="utf-8")
+    assert "Пробный период закончился" in errors and "Ночной запуск выключен" in errors
+
+
+def test_second_operation_waits_for_the_first(sandbox, monkeypatch):
+    from filecleaner import cli, winutil
+
+    def busy():
+        raise winutil.Busy("занято")
+
+    monkeypatch.setattr(cli, "exclusive", busy)
+    assert cli.main(["undo", "--yes"]) == 4                                  # окно или ночь уже работают с файлами

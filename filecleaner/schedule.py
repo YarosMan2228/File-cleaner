@@ -11,10 +11,10 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, unescape
 
 from .i18n import tr
-from .winutil import NO_WINDOW
+from .winutil import NO_WINDOW, system_exe
 
 TASK_NAME = "File Cleaner - Night"
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -28,10 +28,10 @@ def command() -> tuple[str, str, str]:
     """(программа, аргументы, рабочая папка) для ночного запуска — без окна консоли."""
     if getattr(sys, "frozen", False):  # установленная программа: «File Cleaner.exe» без консоли
         exe = Path(sys.executable).with_name("File Cleaner.exe")
-        return str(exe), "night --apply --yes", str(exe.parent)
+        return str(exe), "night --apply --yes --scheduled", str(exe.parent)
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     python = pythonw if pythonw.exists() else Path(sys.executable)
-    return str(python), "-m filecleaner night --apply --yes", str(Path(__file__).resolve().parents[1])
+    return str(python), "-m filecleaner night --apply --yes --scheduled", str(Path(__file__).resolve().parents[1])
 
 
 def task_xml(at: str, wake: bool) -> str:
@@ -54,10 +54,10 @@ def task_xml(at: str, wake: bool) -> str:
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <StartWhenAvailable>false</StartWhenAvailable>
     <WakeToRun>{"true" if wake else "false"}</WakeToRun>
-    <ExecutionTimeLimit>PT6H</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT12H</ExecutionTimeLimit>
     <Enabled>true</Enabled>
   </Settings>
   <Actions Context="Author">
@@ -72,28 +72,37 @@ def task_xml(at: str, wake: bool) -> str:
 
 
 def _schtasks(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["schtasks", *args], capture_output=True, text=True, encoding="oem", errors="replace",
-                          timeout=30, creationflags=NO_WINDOW)
+    try:
+        return subprocess.run([system_exe("schtasks.exe"), *args], capture_output=True, text=True, encoding="oem",
+                              errors="replace", timeout=30, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ScheduleError(tr("Планировщик Windows не ответил: {error}", error=exc)) from exc
 
 
 def status() -> dict:
-    """{"enabled": есть ли задача, "time": "03:00", "wake": будит ли компьютер}."""
+    """{"enabled": есть ли задача (None — Планировщик не ответил), "time": "03:00", "wake": будит ли компьютер,
+    "ok": запускает ли она эту копию программы, "program": что запускает}."""
+    off = {"enabled": False, "time": "03:00", "wake": True, "ok": True, "program": ""}
     try:
         result = _schtasks("/Query", "/TN", TASK_NAME, "/XML")
-    except (OSError, subprocess.SubprocessError):
-        return {"enabled": False, "time": "03:00", "wake": True}
+    except ScheduleError:
+        return {**off, "enabled": None}
     if result.returncode != 0:
-        return {"enabled": False, "time": "03:00", "wake": True}
+        return off
     xml = result.stdout
     time = re.search(r"<StartBoundary>[^<]*T(\d{2}:\d{2})", xml)
     settings = re.search(r"<Settings>(.*?)</Settings>", xml, re.S)
     disabled = bool(settings and "<Enabled>false</Enabled>" in settings.group(1))  # выключена вручную
+    found = re.search(r"<Command>([^<]*)</Command>", xml)
+    program = unescape(found.group(1)).strip('"') if found else ""
+    here = command()[0]
+    ok = os.path.normcase(os.path.abspath(program)) == os.path.normcase(os.path.abspath(here)) and os.path.exists(here)
     return {"enabled": not disabled, "time": time.group(1) if time else "03:00",
-            "wake": "<WakeToRun>true</WakeToRun>" in xml}
+            "wake": "<WakeToRun>true</WakeToRun>" in xml, "ok": ok, "program": program}
 
 
 def install(at: str, wake: bool) -> None:
-    if not _TIME.match(at):
+    if not _TIME.fullmatch(at):
         raise ScheduleError(tr("Время — в виде 03:00."))
     fd, path = tempfile.mkstemp(suffix=".xml")
     try:
@@ -109,7 +118,7 @@ def install(at: str, wake: bool) -> None:
 
 def remove() -> None:
     result = _schtasks("/Delete", "/TN", TASK_NAME, "/F")
-    if result.returncode != 0 and status()["enabled"]:
+    if result.returncode != 0 and status()["enabled"] is not False:
         raise ScheduleError(tr("Не получилось убрать задачу из Планировщика: {error}",
                                error=(result.stderr or result.stdout).strip()))
 
@@ -118,9 +127,9 @@ def apply(wanted: dict) -> None:
     """Приводит задачу к нужному виду: включить/выключить, время, «будить компьютер»."""
     current = status()
     if not wanted.get("enabled"):
-        if current["enabled"]:
+        if current["enabled"] is not False:
             remove()
         return
     at, wake = str(wanted.get("time", "03:00")), bool(wanted.get("wake", True))
-    if current != {"enabled": True, "time": at, "wake": wake}:
-        install(at, wake)
+    if (current["enabled"], current["time"], current["wake"], current["ok"]) != (True, at, wake, True):
+        install(at, wake)  # в том числе если задача запускала другую копию программы (перенесли, переустановили)

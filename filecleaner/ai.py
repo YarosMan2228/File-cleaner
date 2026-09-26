@@ -99,7 +99,9 @@ def text_snippet(path: Path) -> str:
 class LocalAI:
     def __init__(self, rules: Rules) -> None:
         self.enabled = bool(rules.get("ai.enabled", False))
-        self.url = str(rules.get("ai.url", "http://localhost:11434")).rstrip("/")
+        self.url = str(rules.get("ai.url", "http://127.0.0.1:11434")).rstrip("/")
+        # «localhost» Windows сначала ищет на ::1, а Ollama слушает 127.0.0.1 — лишние 2 с на каждый запрос.
+        self.url = re.sub(r"^(https?://)localhost(?=[:/]|$)", r"\g<1>127.0.0.1", self.url, flags=re.I)
         self.model = str(rules.get("ai.model", "qwen2.5:7b"))
         self.min_confidence = int(rules.get("ai.min_confidence", 80))
         self.about = str(rules.get("ai.about", "") or "").strip()

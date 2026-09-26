@@ -53,3 +53,7 @@ Name: "{autodesktop}\File Cleaner"; Filename: "{app}\File Cleaner.exe"; Tasks: d
 
 [Run]
 Filename: "{app}\File Cleaner.exe"; Description: "{cm:LaunchProgram,File Cleaner}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; ночной запуск из Планировщика — убрать вместе с программой, иначе Windows будила бы компьютер впустую
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""File Cleaner - Night"" /F"; Flags: runhidden; RunOnceId: "DelNightTask"

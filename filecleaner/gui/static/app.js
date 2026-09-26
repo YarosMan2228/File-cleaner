@@ -195,6 +195,7 @@ function bindTabs() {
 
 // ================================================================ статус и главная
 async function refreshStatus(first = false) {
+  const hadStatus = Boolean(state.status);
   try {
     state.status = await api('/api/status');
   } catch (error) {
@@ -203,6 +204,7 @@ async function refreshStatus(first = false) {
     return;
   }
   renderStatus();
+  if (!hadStatus && state.draft && !settingsDirty()) renderSettings();  // настройки открылись раньше, чем пришло состояние
   const ai = state.status.ai;
   if (ai.enabled && !(ai.local && ai.available)) refreshAiSetup();
   else $('#ai-panel').hidden = true;
@@ -244,7 +246,7 @@ function renderStatus() {
   const chip = $('#ai-status');
   chip.classList.toggle('ok', ai.enabled && ai.local && ai.available);
   chip.classList.toggle('warn', ai.enabled && !(ai.local && ai.available));
-  $('#ai-text').textContent = !ai.enabled ? t('ИИ выключен в правилах')
+  $('#ai-text').textContent = !ai.enabled ? t('ИИ выключен')
     : !ai.local ? t('ИИ выключен: модель не на этом компьютере')
       : ai.available ? t('ИИ: {0} готов', ai.model) : t('ИИ: запусти Ollama');
 
@@ -288,17 +290,17 @@ function renderAiSetup() {
   let steps;
   if (!setup.local) {
     steps = [setupStep(false, t('Адрес модели не на этом компьютере'),
-      t('Ради приватности ИИ выключен: файлы не должны уходить в сеть. Верни адрес http://localhost:11434 в файле правил.'))];
+      t('Ради приватности ИИ выключен: файлы не должны уходить в сеть. Верни адрес http://127.0.0.1:11434 в файле правил.'))];
   } else {
     steps = [
-      setupStep(setup.installed, t('Ollama установлена'),
+      setupStep(setup.installed, setup.installed ? t('Ollama установлена') : t('Установи Ollama'),
         setup.installed ? null : t('Скачай и установи её с официального сайта, потом вернись сюда — я проверю сам.'),
         setup.installed ? null : button(t('Открыть сайт Ollama'), () => api('/api/open', { what: 'ollama-site' })
           .catch((e) => toast(e.message, true)))),
-      setupStep(setup.running, t('Ollama запущена'),
+      setupStep(setup.running, setup.running ? t('Ollama запущена') : t('Запусти Ollama'),
         setup.running ? null : t('Она работает в фоне, значок — возле часов.'),
         !setup.running && setup.installed ? button(t('Запустить Ollama'), startOllama) : null),
-      setupStep(setup.has_model, t('Модель {0} скачана', setup.model),
+      setupStep(setup.has_model, setup.has_model ? t('Модель {0} скачана', setup.model) : t('Скачай модель {0}', setup.model),
         setup.has_model ? null
           : setup.running ? t('Около 4,7 ГБ, скачивается один раз.') : t('Проверю, когда Ollama запустится.'),
         !setup.has_model && setup.running
@@ -919,8 +921,13 @@ function renderSettings() {
         h('div', { class: 'field' }, h('span', { class: 'field-label' }, ' '),
           toggle(draft.schedule.wake, t('Будить компьютер, если он спит'), (on) => { draft.schedule.wake = on; }))),
       h('p', { class: 'hint' }, t('Задача в Планировщике Windows: запускается, только когда ноутбук на зарядке, '
-        + 'и не догоняет пропущенный запуск днём. Чтобы компьютер просыпался, в электропитании должны быть '
+        + 'ждёт, пока за компьютером никого нет, и не догоняет пропущенный запуск днём. Если ты за компьютером — '
+        + 'не усыпляет и не выключает его. Чтобы компьютер просыпался, в электропитании должны быть '
         + 'разрешены таймеры пробуждения.')),
+      draft.schedule.enabled && !state.settings.schedule.ok
+        ? h('p', { class: 'errors' }, t('Задача в Планировщике запускает программу, которой здесь нет: {0}. '
+          + 'Сохрани настройки — и она будет запускать эту копию.', state.settings.schedule.program))
+        : null,
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('Когда закончит')), after),
       toggle(draft.night.auto_delete, t('Проверенные копии в Загрузках и на Рабочем столе удалять сразу (сверив с оригиналом)'),
         (on) => { draft.night.auto_delete = on; }),
@@ -952,6 +959,7 @@ async function loadSettings() {
     return;
   }
   state.draft = structuredClone(state.settings);
+  if (state.draft.schedule.enabled && !state.draft.schedule.ok) state.draft.schedule.ok = true;  // есть что сохранить
   renderSettings();
 }
 
@@ -962,7 +970,10 @@ function bindSettings() {
     button.disabled = true;
     const languageChanged = state.draft.ui.language !== state.settings.ui.language;
     try {
-      state.settings = await api('/api/settings', state.draft);
+      const payload = structuredClone(state.draft);
+      // Расписание — только если его меняли: старый черновик не должен убрать задачу, созданную из консоли.
+      if (JSON.stringify(payload.schedule) === JSON.stringify(state.settings.schedule)) delete payload.schedule;
+      state.settings = await api('/api/settings', payload);
       if (languageChanged) { location.reload(); return; }  // окно — сразу на новом языке
       state.draft = structuredClone(state.settings);
       renderSettings();

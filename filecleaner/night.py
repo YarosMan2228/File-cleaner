@@ -32,9 +32,11 @@ from .fsutil import display, human_size, is_under, key_of, long_path, walk
 from .i18n import tr
 from .index import Index
 from .rules import Rules
-from .winutil import fixed_drives, go_to_sleep, keep_awake, shut_down
+from .winutil import exclusive, fixed_drives, go_to_sleep, idle_seconds, keep_awake, shut_down
 
 Log = Callable[[str], None]
+QUIET = 600          # с без мыши и клавиатуры: за компьютером никого нет — ночной запуск по расписанию начинает
+QUIET_WAIT = 7200    # с, сколько ждать этого (потом — пропустить ночь)
 AFTER = ("nothing", "sleep", "shutdown")
 # Что можно удалять ночью без утреннего «утвердить»: содержимое ещё раз сверяется перед удалением.
 AUTO_RULES = frozenset({
@@ -91,7 +93,7 @@ def _outside_home_on_system_drive(path: Path) -> bool:
 
 
 def guard_system_drive(findings: list[Finding]) -> None:
-    """На системном диске вне папки пользователя (C:\\Siemens, C:\\GMSProjects…) — данные программ: только отчёт."""
+    """На системном диске вне папки пользователя (C:\\Autodesk, C:\\Projects…) — данные программ: только отчёт."""
     for finding in findings:
         if finding.rule.startswith("junk.") or finding.mode == "report":
             continue
@@ -262,16 +264,40 @@ class NightResult:
 
 
 def run_night(rules: Rules, log: Log = print, progress: Log = _quiet) -> NightResult:
-    out = NightResult(datetime.now())
-    keep_awake(True)
+    with exclusive():  # окно, консоль и Планировщик не работают с файлами одновременно (winutil.Busy — занято)
+        out = NightResult(datetime.now())
+        keep_awake(True)
+        try:
+            _run(rules, out, log, progress)
+        finally:
+            keep_awake(False)
+            out.finished = datetime.now()
+            out.report = report.save(tr("ночь"), render(out, rules))
+            _save_last(out)
+        return out
+
+
+def wait_for_quiet(log: Log = print, need: int = QUIET, limit: int = QUIET_WAIT) -> bool:
+    """Запуск по расписанию: ждём, пока за компьютером никого нет, чтобы файлы не переезжали у тебя на глазах.
+
+    False — так и не дождались (засиделся допоздна): эту ночь пропускаем. Считаем по часам, а не по сну потока:
+    если компьютер уснул, пока ждали, днём после пробуждения ничего не начнётся.
+    """
+    deadline = time.time() + limit
+    told = False
+    keep_awake(True)  # пока ждём, Windows не уснёт — иначе проснётся уже утром
     try:
-        _run(rules, out, log, progress)
+        while idle_seconds() < need:
+            if time.time() >= deadline:
+                log(tr("За компьютером так и работали — эту ночь пропускаю."))
+                return False
+            if not told:
+                log(tr("За компьютером работают — начну, когда {minutes} мин никого не будет.", minutes=need // 60))
+                told = True
+            time.sleep(30)
+        return True
     finally:
         keep_awake(False)
-        out.finished = datetime.now()
-        out.report = report.save(tr("ночь"), render(out, rules))
-        _save_last(out)
-    return out
 
 
 def _stage(title: str, log: Log, out: NightResult, action: Callable[[], None]) -> None:
@@ -365,15 +391,25 @@ def _run(rules: Rules, out: NightResult, log: Log, progress: Log) -> None:
 
 
 # ======================================================================= после
-def after(action: str, log: Log = print, delay: int = 60) -> None:
-    """Сон или выключение через delay секунд (Ctrl+C — отменить)."""
+def after(action: str, log: Log = print, delay: int = 60, scheduled: bool = False) -> None:
+    """Сон или выключение через delay секунд (Ctrl+C — отменить).
+
+    scheduled — запуск по расписанию, окна нет: если за компьютером сидят или тронули мышь и клавиатуру
+    во время отсчёта — ни сна, ни выключения.
+    """
     if action not in ("sleep", "shutdown"):
+        return
+    if scheduled and idle_seconds() < QUIET:
+        log(tr("За компьютером работают — не усыпляю и не выключаю."))
         return
     try:
         for left in range(delay, 0, -10):
             log(tr("Через {left} с усыплю компьютер (Ctrl+C — отменить)…", left=left) if action == "sleep"
                 else tr("Через {left} с выключу компьютер (Ctrl+C — отменить)…", left=left))
             time.sleep(min(10, left))
+            if scheduled and idle_seconds() < delay - left + 10:
+                log(tr("Кто-то тронул мышь или клавиатуру — компьютер остаётся включённым."))
+                return
     except KeyboardInterrupt:
         log(tr("Отменено — компьютер остаётся включённым."))
         return

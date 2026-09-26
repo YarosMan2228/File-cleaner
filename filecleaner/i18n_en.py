@@ -511,4 +511,38 @@ EN: dict[str, str] = {
     "номер из history или last": "an ID from history, or last",
     "показать правила; --edit — открыть их для правки": "show the rules; --edit opens them for editing",
     "открыть файл правил": "open the rules file",
+    # одна операция за раз
+    "Уже идёт другая операция File Cleaner (в другом окне или ночной запуск) — дождись её конца.": "Another File Cleaner operation is already running (in another window or the nightly run) — wait for it to finish.",
+    # ночь по расписанию
+    "За компьютером так и работали — эту ночь пропускаю.": "Someone kept working at the computer — skipping this night.",
+    "За компьютером работают — начну, когда {minutes} мин никого не будет.": "Someone is using the computer — I will start once nobody has touched it for {minutes} min.",
+    "За компьютером работают — не усыпляю и не выключаю.": "Someone is using the computer — not putting it to sleep or shutting it down.",
+    "Кто-то тронул мышь или клавиатуру — компьютер остаётся включённым.": "Someone touched the mouse or keyboard — the computer stays on.",
+    # расписание: надёжность
+    "Планировщик Windows не ответил: {error}": "Windows Task Scheduler did not respond: {error}",
+    # консоль: ночной запуск по расписанию
+    "Ночной запуск выключен: пробный период закончился. После ввода ключа включи его снова (Настройки → «Приступай»).": "The nightly run is turned off: the trial is over. After entering a key, turn it on again (Settings → «Clean up»).",
+    "запуск из Планировщика: начать, когда за компьютером никого нет, и не усыплять, если кто-то вернулся": "run from Task Scheduler: start when nobody is at the computer, and do not sleep if someone comes back",
+    "Задача запускает программу, которой здесь нет: {program}. Исправить: filecleaner schedule --at {time}": "The task starts a program that is not here: {program}. To fix: filecleaner schedule --at {time}",
+    # сжатие
+    "облачные файлы OneDrive": "OneDrive cloud-only files",
+    "системные": "system files",
+    "маленькие (меньше 64 КБ)": "small (under 64 KB)",
+    "уже сжатые форматы (zip, jpg, mp4, docx…)": "already compressed formats (zip, jpg, mp4, docx…)",
+    "менялись за последние {days} дн.": "changed in the last {days} days",
+    "уже сжаты": "already compressed",
+    "Оцениваю сжатие: {count} файлов…": "Estimating compression: {count} files…",
+    "сжимаются плохо (меньше порога)": "compress poorly (below the threshold)",
+    "Сжато {done}/{total} файлов": "Compressed {done}/{total} files",
+    # скан
+    "Скан: {count} файлов, {size}": "Scan: {count} files, {size}",
+    "Сравниваю начала файлов": "Comparing file beginnings",
+    "Сравниваю содержимое": "Comparing contents",
+    "{label}: {i}/{count} ({done} из {total})": "{label}: {i}/{count} ({done} of {total})",
+    # ошибки в правилах
+    "Ошибка в файле правил: {error}": "Error in the rules file: {error}",
+    "В правилах {key} = {value}: можно только {allowed}.": "In the rules, {key} = {value}: only {allowed} are allowed.",
+    "В правилах {key} = \"delete\": твои файлы без проверки не удаляются — поставь \"review\" (перенос в «{folder}»).": "In the rules, {key} = \"delete\": your files are never deleted unchecked — use \"review\" (move to «{folder}»).",
+    "В правилах night.after = {value}: можно только nothing, sleep, shutdown.": "In the rules, night.after = {value}: only nothing, sleep, shutdown are allowed.",
+    "В правилах {key}: {error}": "In the rules, {key}: {error}",
 }

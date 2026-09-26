@@ -82,3 +82,16 @@ def test_without_key_only_preview(seller, sandbox, rules, capsys, monkeypatch):
     assert cli.cmd_sort(Namespace(folder=str(lab.parent), apply=True, yes=True), rules) == 3
     assert lab.exists()                                                      # ничего не тронуто
     assert "Пробный период закончился" in capsys.readouterr().out
+
+
+def test_key_from_a_rich_email_and_a_damaged_file(seller):
+    key = licensing.issue(seller, "Покупатель")
+    messy = "\ufeff" + key.replace("-", "\u2013").replace("FC1", "FC1\u200b") + "\u00a0"   # тире, невидимые пробелы
+    assert licensing.parse(messy).key == key
+    licensing.activate(key)
+    path = licensing._path()
+    path.write_text("{испорчен", encoding="utf-8")
+    assert licensing.status()["state"] == "trial"                          # ключ не прочитать…
+    assert path.with_name(path.name + ".bad").read_text(encoding="utf-8") == "{испорчен"   # …но файл не затёрт
+    licensing._save({"trial_started": (dt.date.today() + dt.timedelta(days=100)).isoformat()})
+    assert licensing.status()["days_left"] == 30                            # начало «из будущего» — с сегодня

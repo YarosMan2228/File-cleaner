@@ -15,11 +15,26 @@ from .fsutil import display, human_size, plural
 from .i18n import tr
 from .index import Index
 from .rules import Rules, RulesError, ensure_user_rules
+from .winutil import Busy, exclusive
 
 # ======================================================================= вывод
-for _name in ("stdout", "stderr"):
-    if getattr(sys, _name) is None:  # без консоли (окно, запуск из Планировщика) потоков вывода нет вовсе
-        setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
+def _console_log():
+    """Без консоли (окно, запуск из Планировщика) вывод и ошибки — в журнал, иначе их не увидеть."""
+    try:
+        path = config.DATA_DIR / "logs" / "console.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > 1_000_000:
+            path.replace(path.with_name("console.old.log"))
+        stream = open(path, "a", encoding="utf-8", buffering=1)
+        stream.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(sys.argv[1:])}\n")
+        return stream
+    except OSError:
+        return open(os.devnull, "w", encoding="utf-8")
+
+
+if sys.stdout is None or sys.stderr is None:  # без консоли потоков вывода нет вовсе
+    _log = _console_log()
+    sys.stdout, sys.stderr = sys.stdout or _log, sys.stderr or _log
 if os.name == "nt" and sys.stdout.isatty():
     os.system("")  # включает цвета ANSI в классической консоли Windows
 _COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
@@ -219,12 +234,11 @@ def _print_check(result: analyzers.CheckResult) -> list[str]:
 
 
 def _check_report(result: analyzers.CheckResult) -> str:
-    groups: dict[str, list[analyzers.Finding]] = defaultdict(list)
+    groups: dict[tuple[str, str], list[analyzers.Finding]] = defaultdict(list)
     for finding in result.findings:
-        groups[finding.group].append(finding)
+        groups[(finding.group, finding.mode)].append(finding)
     sections = []
-    for group, items in sorted(groups.items(), key=lambda kv: -sum(f.size for f in kv[1])):
-        mode = items[0].mode
+    for (group, mode), items in sorted(groups.items(), key=lambda kv: -sum(f.size for f in kv[1])):
         size = human_size(sum(f.size for f in items))
         title = f"{group} — {size} · {mode_title(mode, short=True).lower()}"
         if mode == "delete" and len(items) > 50:
@@ -265,16 +279,24 @@ def _license_line(info: dict) -> str:
     return tr("Пробный период закончился. Ввести ключ: filecleaner license FC1-…")
 
 
+def _night_error(text: str) -> None:
+    """Ночной запуск из Планировщика: окна нет — причина остаётся в журнале ошибок."""
+    try:
+        (config.DATA_DIR / "logs").mkdir(parents=True, exist_ok=True)
+        with open(config.DATA_DIR / "logs" / "night-errors.log", "a", encoding="utf-8") as fh:
+            fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M')} {text}\n")
+    except OSError:
+        pass
+
+
 def _licensed(unattended: bool = False) -> bool:
     """Чистить, раскладывать и удалять можно в пробный период и с ключом; смотреть — всегда."""
     try:
         licensing.require()
     except licensing.LicenseError as exc:
         print(red(str(exc)))
-        if unattended:  # ночной запуск из Планировщика: окна нет — причина остаётся в журнале
-            (config.DATA_DIR / "logs").mkdir(parents=True, exist_ok=True)
-            with open(config.DATA_DIR / "logs" / "night-errors.log", "a", encoding="utf-8") as fh:
-                fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M')} {exc}\n")
+        if unattended:
+            _night_error(str(exc))
         return False
     return True
 
@@ -760,6 +782,9 @@ def cmd_schedule(args, rules: Rules, interactive: bool = False) -> int:
     if state["enabled"]:
         wake = tr(", будит компьютер") if state["wake"] else ""
         print(tr("«Приступай» запускается сам каждую ночь в {time}{wake}.", time=state["time"], wake=wake))
+        if not state["ok"]:
+            print(yellow(tr("Задача запускает программу, которой здесь нет: {program}. Исправить: filecleaner schedule "
+                            "--at {time}", program=state["program"], time=state["time"])))
     else:
         print(tr("Ночной запуск выключен. Включить: filecleaner schedule --at 03:00"))
     return 0
@@ -786,10 +811,15 @@ def cmd_night(args, rules: Rules, interactive: bool = False) -> int:
         print("  " + tr("Только в отчёт: {size}", size=human_size(sum(f.size for f in plan.check.by_mode("report")))))
         print(cyan(tr("Это был просмотр. Выполнить: filecleaner night --apply")))
         return 0
+    scheduled = getattr(args, "scheduled", False)
     if not _licensed(unattended=getattr(args, "yes", False)):
+        if scheduled:  # не будить компьютер каждую ночь впустую
+            _stop_schedule()
         return 3
     if not getattr(args, "yes", False) and not confirm("\n" + tr("Приступить? Дальше можно уйти — всё сделается само")):
         print(tr("Отменено, ничего не тронуто."))
+        return 0
+    if scheduled and not night.wait_for_quiet(print):
         return 0
 
     progress = Progress()
@@ -808,8 +838,19 @@ def cmd_night(args, rules: Rules, interactive: bool = False) -> int:
     for error in out.errors[:10]:
         print(yellow(f"  ! {error}"))
     print(dim(tr("Отчёт: {path}", path=out.report) + "\n" + tr("Журнал: {path}", path=log_path)))
-    night.after(rules.get("night.after", "nothing"), log)
+    night.after(rules.get("night.after", "nothing"), log, scheduled=scheduled)
     return 0
+
+
+def _stop_schedule() -> None:
+    from . import schedule
+
+    try:
+        schedule.remove()
+    except schedule.ScheduleError:
+        return
+    _night_error(tr("Ночной запуск выключен: пробный период закончился. После ввода ключа включи его снова "
+                    "(Настройки → «Приступай»)."))
 
 
 # ======================================================================= меню
@@ -866,7 +907,10 @@ def menu() -> int:
             continue
         print()
         try:
-            action(argparse.Namespace(apply=False, yes=False), rules, interactive=True)
+            with exclusive():  # окно или ночной запуск в это время файлы не трогают
+                action(argparse.Namespace(apply=False, yes=False), rules, interactive=True)
+        except Busy as exc:
+            print(red(str(exc)))
         except KeyboardInterrupt:
             print(yellow("\n" + tr("Прервано.")))
 
@@ -903,6 +947,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help=tr("не спрашивать подтверждение"))
     p.add_argument("--after", choices=night.AFTER,
                    help=tr("что сделать в конце (по умолчанию — night.after в правилах)"))
+    p.add_argument("--scheduled", action="store_true",
+                   help=tr("запуск из Планировщика: начать, когда за компьютером никого нет, и не усыплять, "
+                           "если кто-то вернулся"))
     add("scan", cmd_scan, tr("что занимает место"))
     p = add("check", cmd_check, tr("найти мусор, дубли и лишнее (с --apply: кэши удалить, остальное — на проверку)"))
     p.add_argument("--apply", action="store_true", help=tr("выполнить, а не только показать"))
@@ -953,8 +1000,17 @@ def main(argv: list[str] | None = None) -> int:
     except RulesError as exc:
         print(red(str(exc)))
         return 2
+    changes = args.command in ("approve", "undo") or getattr(args, "apply", False)
     try:
-        return args.func(args, rules) or 0
+        if not changes:
+            return args.func(args, rules) or 0
+        with exclusive():  # одна операция с файлами за раз: окно, консоль и ночной запуск
+            return args.func(args, rules) or 0
+    except Busy as exc:
+        print(red(str(exc)))
+        if getattr(args, "scheduled", False):
+            _night_error(str(exc))
+        return 4
     except KeyboardInterrupt:
         print(yellow("\n" + tr("Прервано.")))
         return 130

@@ -33,7 +33,8 @@ window.I18N_EN = {
   'Посмотреть, что будет': 'Preview',
   'Приступить': 'Start',
   'Когда закончу — усыпить компьютер': 'Put the computer to sleep when done',
-  'Сначала посмотри, что будет: без этого «Приступить» не включится.': 'Preview first — «Start» is enabled only after that.',
+  'Сначала посмотри, что будет: без этого «Приступить» не включится. Первый раз это долго — читаю все диски, потом быстрее.':
+    'Preview first — «Start» is enabled only after that. The first time takes a while: I read all drives; later it is faster.',
   'Работаю…': 'Working…',
   'Не усыплять': 'Stay awake',
   'Идёт работа': 'Working',
@@ -75,7 +76,10 @@ window.I18N_EN = {
   // ---------------------------------------------------------------- статус и ИИ
   'Программа закрыта — запусти её снова': 'The program is closed — start it again',
   'Открой окно через File Cleaner': 'Open this window from File Cleaner',
-  'ИИ выключен в правилах': 'AI is off in the rules',
+  'ИИ выключен': 'AI is off',
+  'Установи Ollama': 'Install Ollama',
+  'Запусти Ollama': 'Start Ollama',
+  'Скачай модель {0}': 'Download the model {0}',
   'ИИ выключен: модель не на этом компьютере': 'AI is off: the model is not on this computer',
   'ИИ: {0} готов': 'AI: {0} ready',
   'ИИ: запусти Ollama': 'AI: start Ollama',
@@ -84,8 +88,8 @@ window.I18N_EN = {
   ' — готово': ' — done',
   ' — нужно сделать': ' — to do',
   'Адрес модели не на этом компьютере': 'The model address is not on this computer',
-  'Ради приватности ИИ выключен: файлы не должны уходить в сеть. Верни адрес http://localhost:11434 в файле правил.':
-    'AI is off for privacy: files must not leave this computer. Set the address back to http://localhost:11434 in the rules file.',
+  'Ради приватности ИИ выключен: файлы не должны уходить в сеть. Верни адрес http://127.0.0.1:11434 в файле правил.':
+    'AI is off for privacy: files must not leave this computer. Set the address back to http://127.0.0.1:11434 in the rules file.',
   'Ollama установлена': 'Ollama is installed',
   'Скачай и установи её с официального сайта, потом вернись сюда — я проверю сам.':
     'Download and install it from the official site, then come back — I will check by myself.',
@@ -237,6 +241,8 @@ window.I18N_EN = {
   'Запускать сам каждую ночь': 'Run by itself every night',
   'Во сколько': 'At what time',
   'Будить компьютер, если он спит': 'Wake the computer if it is asleep',
-  'Задача в Планировщике Windows: запускается, только когда ноутбук на зарядке, и не догоняет пропущенный запуск днём. Чтобы компьютер просыпался, в электропитании должны быть разрешены таймеры пробуждения.':
-    'A Windows Task Scheduler task: it runs only while a laptop is plugged in and does not catch up on a missed run during the day. For the computer to wake up, wake timers must be allowed in the power settings.',
+  'Задача в Планировщике Windows: запускается, только когда ноутбук на зарядке, ждёт, пока за компьютером никого нет, и не догоняет пропущенный запуск днём. Если ты за компьютером — не усыпляет и не выключает его. Чтобы компьютер просыпался, в электропитании должны быть разрешены таймеры пробуждения.':
+    'A Windows Task Scheduler task: it runs only while a laptop is plugged in, waits until nobody is using the computer and does not catch up on a missed run during the day. If you are at the computer, it will not put it to sleep or shut it down. For the computer to wake up, wake timers must be allowed in the power settings.',
+  'Задача в Планировщике запускает программу, которой здесь нет: {0}. Сохрани настройки — и она будет запускать эту копию.':
+    'The Task Scheduler task starts a program that is not here: {0}. Save the settings and it will start this copy.',
 };

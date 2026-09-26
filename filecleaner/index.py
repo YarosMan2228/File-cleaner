@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import config
 from .fsutil import attributes, birth_time, human_size, is_cloud_only, long_path, walk
+from .i18n import tr
 from .winutil import read_zone_source
 
 HEAD_BYTES = 64 * 1024
@@ -165,7 +166,7 @@ class Index:
                 if len(rows) >= 5000:
                     flush()
                 if stats.files % 1000 == 0:
-                    progress(f"Скан: {stats.files:,} файлов, {human_size(stats.bytes)}".replace(",", " "))
+                    progress(tr("Скан: {count} файлов, {size}", count=f"{stats.files:,}".replace(",", " "), size=human_size(stats.bytes)))
         flush()
         if roots:
             names = list(roots)
@@ -206,7 +207,7 @@ class Index:
             return result
         total = sum(min(r.size, 2 * HEAD_BYTES) if kind == "head" else r.size for r in todo)
         done = 0
-        label = "Сравниваю начала файлов" if kind == "head" else "Сравниваю содержимое"
+        label = tr("Сравниваю начала файлов") if kind == "head" else tr("Сравниваю содержимое")
         with ThreadPoolExecutor(max_workers=4) as pool:
             digests = pool.map(lambda r: file_digest(r.path, r.size, kind), todo)
             for i, (rec, digest) in enumerate(zip(todo, digests), 1):
@@ -215,6 +216,7 @@ class Index:
                     result[rec.key] = digest
                     self.db.execute(_UPSERT[kind], (rec.key, rec.size, rec.mtime, digest))
                 if i % 50 == 0 or kind == "full":
-                    progress(f"{label}: {i}/{len(todo)} ({human_size(done)} из {human_size(total)})")
+                    progress(tr("{label}: {i}/{count} ({done} из {total})", label=label, i=i, count=len(todo),
+                             done=human_size(done), total=human_size(total)))
         self.db.commit()
         return result

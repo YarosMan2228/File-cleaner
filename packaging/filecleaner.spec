@@ -15,7 +15,8 @@ datas = [
 options = dict(
     pathex=[str(ROOT)],
     hiddenimports=["filecleaner.gui.app"],
-    excludes=["tkinter", "unittest", "pydoc", "test", "lib2to3"],
+    excludes=["tkinter", "unittest", "pydoc", "test", "lib2to3",
+              "PIL", "cryptography", "cffi"],  # pypdf читает текст и без них: картинки и AES-PDF не нужны
 )
 
 gui = Analysis([str(PACK / "launcher_gui.py")], datas=datas, **options)

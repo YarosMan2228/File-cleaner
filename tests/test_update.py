@@ -57,7 +57,7 @@ def test_versions_compare_as_numbers():
 
 def test_new_version_found_once_a_day(github, rules):
     latest = update.check(rules)
-    assert latest == {"version": "9.0.0", "url": update.PAGE + "tag/v9.0.0", "notes": "Что нового"}
+    assert latest == {"version": "9.0.0", "tag": "v9.0.0", "url": update.PAGE + "tag/v9.0.0", "notes": "Что нового"}
     assert github.requests[0]["User-Agent"].startswith("FileCleaner/")     # о тебе — ничего, только версия
     assert update.check(rules) == latest and len(github.requests) == 1        # второй раз за день — без сети
     assert update.check(rules, force=True) == latest and len(github.requests) == 2   # «Проверить сейчас»
@@ -87,3 +87,15 @@ def test_no_release_older_release_disabled_offline(github, rules, monkeypatch):
     assert update.check(rules)["version"] == "9.0.0"                # что знали — то и показываем
     with pytest.raises(update.Unreachable):
         update.check(rules, force=True)                             # сам нажал «Проверить» — честно говорим
+
+
+def test_broken_or_future_check_time_does_not_stop_checks(github, rules):
+    import time
+
+    from filecleaner import config
+
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for checked in ([1], "вчера", time.time() + 10 * 86400):   # мусор в файле или часы ушли вперёд
+        (config.DATA_DIR / "update.json").write_text(json.dumps({"checked": checked}), encoding="utf-8")
+        assert update.check(rules)["version"] == "9.0.0"
+    assert len(github.requests) == 3

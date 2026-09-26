@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, i18n
+from .i18n import tr
 from .fsutil import parse_size
 
 MODES = ("delete", "review", "report", "off")
@@ -67,7 +68,7 @@ class Rules:
                 _merge(data, user)
                 used = source
         except tomllib.TOMLDecodeError as exc:
-            raise RulesError(f"Ошибка в файле правил: {exc}") from exc
+            raise RulesError(tr("Ошибка в файле правил: {error}", error=exc)) from exc
         if "sector" not in user and i18n.resolve(data.get("ui", {}).get("language")) == "en":
             data["sector"] = [_in_english(s) for s in data.get("sector", [])]  # их имена станут именами папок
         rules = cls(data, used)
@@ -121,20 +122,20 @@ class Rules:
         for key, allowed in MODE_KEYS.items():
             value = self.mode(key)
             if value not in allowed:
-                raise RulesError(f"В правилах {key} = {value!r}: можно только {', '.join(allowed)}.")
+                raise RulesError(tr("В правилах {key} = {value}: можно только {allowed}.", key=key, value=repr(value),
+                                   allowed=", ".join(allowed)))
             if value == "delete" and key.startswith(USER_FILE_PREFIXES):
-                raise RulesError(
-                    f"В правилах {key} = \"delete\": твои файлы без проверки не удаляются — "
-                    f"поставь \"review\" (перенос в «{config.REVIEW_DIR_NAME}»)."
-                )
+                raise RulesError(tr("В правилах {key} = \"delete\": твои файлы без проверки не удаляются — "
+                                    "поставь \"review\" (перенос в «{folder}»).", key=key, folder=config.REVIEW_DIR_NAME))
         after = self.get("night.after", "nothing")
         if after not in ("nothing", "sleep", "shutdown"):
-            raise RulesError(f"В правилах night.after = {after!r}: можно только nothing, sleep, shutdown.")
+            raise RulesError(tr("В правилах night.after = {value}: можно только nothing, sleep, shutdown.",
+                                value=repr(after)))
         for key in ("duplicates.min_size", "duplicates.min_folder_size", "old_files.min_size"):
             try:
                 self.size(key)
             except ValueError as exc:
-                raise RulesError(f"В правилах {key}: {exc}") from exc
+                raise RulesError(tr("В правилах {key}: {error}", key=key, error=exc)) from exc
 
 
 def ensure_user_rules() -> Path:

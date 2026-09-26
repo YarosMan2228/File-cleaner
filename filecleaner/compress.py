@@ -19,6 +19,7 @@ from . import config
 from .fsutil import (
     FILE_ATTRIBUTE_COMPRESSED, age_days, attributes, is_cloud_only, is_hidden_system, long_path, walk,
 )
+from .i18n import tr
 from .journal import Session
 from .rules import Rules
 from .winutil import NO_WINDOW, disk_size
@@ -93,32 +94,32 @@ def plan_compress(folder: Path, rules: Rules, progress: Progress = _quiet, now: 
             continue
         ext = Path(entry.name.lower()).suffix.lstrip(".")
         if is_cloud_only(st):
-            plan.skipped["облачные файлы OneDrive"] += 1
+            plan.skipped[tr("облачные файлы OneDrive")] += 1
         elif is_hidden_system(st):
-            plan.skipped["системные"] += 1
+            plan.skipped[tr("системные")] += 1
         elif st.st_size < MIN_FILE:
-            plan.skipped["маленькие (меньше 64 КБ)"] += 1
+            plan.skipped[tr("маленькие (меньше 64 КБ)")] += 1
         elif ext in config.INCOMPRESSIBLE_EXTS:
-            plan.skipped["уже сжатые форматы (zip, jpg, mp4, docx…)"] += 1
+            plan.skipped[tr("уже сжатые форматы (zip, jpg, mp4, docx…)")] += 1
         elif age_days(st.st_mtime, now) < recent:
-            plan.skipped[f"менялись за последние {recent:g} дн."] += 1
+            plan.skipped[tr("менялись за последние {days} дн.", days=f"{recent:g}")] += 1
         elif attributes(st) & FILE_ATTRIBUTE_COMPRESSED or disk_size(entry.path) < st.st_size * 0.9:
-            plan.skipped["уже сжаты"] += 1
+            plan.skipped[tr("уже сжаты")] += 1
         else:
             saving = estimate_saving(Path(entry.path), st.st_size)
             candidate = Candidate(Path(entry.path), st.st_size, saving)
             checked += 1
             if checked % 100 == 0:
-                progress(f"Оцениваю сжатие: {checked} файлов…")
+                progress(tr("Оцениваю сжатие: {count} файлов…", count=checked))
             if ext in config.VM_DISK_EXTS and not include_vm:
                 if saving >= min_saving:
                     plan.vm_disks.append(candidate)
                 else:
-                    plan.skipped["сжимаются плохо (меньше порога)"] += 1
+                    plan.skipped[tr("сжимаются плохо (меньше порога)")] += 1
             elif saving >= min_saving:
                 plan.candidates.append(candidate)
             else:
-                plan.skipped["сжимаются плохо (меньше порога)"] += 1
+                plan.skipped[tr("сжимаются плохо (меньше порога)")] += 1
     return plan
 
 
@@ -175,7 +176,7 @@ def apply_compress(plan: CompressPlan, rules: Rules, session: Session, progress:
         result.before += before
         result.after += after
         done += len(chunk)
-        progress(f"Сжато {done}/{len(items)} файлов")
+        progress(tr("Сжато {done}/{total} файлов", done=done, total=len(items)))
     return result
 
 

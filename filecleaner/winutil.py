@@ -5,10 +5,13 @@ import ctypes
 import os
 import subprocess
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import config
 from .fsutil import long_path
+from .i18n import tr
 
 try:
     import winreg
@@ -18,12 +21,27 @@ except ImportError:  # не Windows
 IS_WINDOWS = os.name == "nt"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+
+def system_exe(name: str) -> str:
+    """Системная программа по полному пути — чужой файл с тем же именем в текущей папке не запустится."""
+    return str(config.WINDIR / "System32" / name)
+
 if IS_WINDOWS:
     from ctypes import wintypes
 
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _kernel32.GetCompressedFileSizeW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
     _kernel32.GetCompressedFileSizeW.restype = wintypes.DWORD
+    _kernel32.GetTickCount.restype = wintypes.DWORD
+    _kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    _kernel32.CreateMutexW.restype = wintypes.HANDLE
+    _kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    _kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    _kernel32.ReleaseMutex.argtypes = [wintypes.HANDLE]
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    class _LASTINPUTINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
 
     class _SHQUERYRBINFO(ctypes.Structure):
         _fields_ = [("cbSize", wintypes.DWORD), ("i64Size", ctypes.c_longlong), ("i64NumItems", ctypes.c_longlong)]
@@ -82,6 +100,40 @@ def keep_awake(on: bool) -> None:
         ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS | (_ES_SYSTEM_REQUIRED if on else 0))
 
 
+def idle_seconds() -> float:
+    """Сколько секунд никто не трогал мышь и клавиатуру в этом сеансе Windows."""
+    if not IS_WINDOWS:
+        return float("inf")
+    info = _LASTINPUTINFO(ctypes.sizeof(_LASTINPUTINFO), 0)
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        return float("inf")
+    return ((_kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000
+
+
+class Busy(RuntimeError):
+    """Другая операция File Cleaner уже идёт: в другом окне, в консоли или ночной запуск."""
+
+
+@contextmanager
+def exclusive(name: str = "Local\\FileCleaner-work") -> Iterator[None]:
+    """Одна операция с файлами за раз во всём сеансе Windows: окно, консоль и Планировщик — разные процессы."""
+    if not IS_WINDOWS:
+        yield
+        return
+    handle = _kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if _kernel32.WaitForSingleObject(handle, 0) not in (0, 0x80):  # свободен или брошен упавшим процессом
+            raise Busy(tr("Уже идёт другая операция File Cleaner (в другом окне или ночной запуск) — дождись её конца."))
+        try:
+            yield
+        finally:
+            _kernel32.ReleaseMutex(handle)
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
 def go_to_sleep() -> bool:
     """Спящий режим (если в Windows включена гибернация — может уйти в неё)."""
     if not IS_WINDOWS:
@@ -93,7 +145,7 @@ def shut_down() -> bool:
     if not IS_WINDOWS:
         return False
     try:
-        subprocess.run(["shutdown", "/s", "/t", "0"], check=True, timeout=30, creationflags=NO_WINDOW)
+        subprocess.run([system_exe("shutdown.exe"), "/s", "/t", "0"], check=True, timeout=30, creationflags=NO_WINDOW)
         return True
     except (OSError, subprocess.SubprocessError):
         return False
@@ -110,7 +162,7 @@ def create_junction(link: Path, target: Path) -> None:
 def running_processes() -> set[str]:
     try:
         out = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
+            [system_exe("tasklist.exe"), "/FO", "CSV", "/NH"], capture_output=True, text=True,
             encoding="oem", errors="replace", timeout=30, creationflags=NO_WINDOW,
         ).stdout
     except (OSError, subprocess.SubprocessError):

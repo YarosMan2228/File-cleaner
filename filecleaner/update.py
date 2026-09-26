@@ -58,13 +58,13 @@ def fetch(timeout: float = 10) -> dict | None:
 def _release(data: object) -> dict | None:
     if not isinstance(data, dict):
         return None
-    version = str(data.get("tag_name") or "").lstrip("vV")
-    if parse_version(version) is None:
+    tag = str(data.get("tag_name") or "")
+    if parse_version(tag) is None:
         return None
-    url = str(data.get("html_url") or "")
-    if not url.startswith(PAGE):
+    url = PAGE + "tag/" + tag  # адрес собираем сами: открываем только страницу выпуска этого проекта
+    if str(data.get("html_url") or "") != url:
         url = PAGE + "latest"
-    return {"version": version, "url": url, "notes": str(data.get("body") or "")[:2000]}
+    return {"version": tag.lstrip("vV"), "tag": tag, "url": url, "notes": str(data.get("body") or "")[:2000]}
 
 
 def _state_path():
@@ -95,7 +95,8 @@ def known() -> dict | None:
     saved = _load_state().get("latest")
     if not isinstance(saved, dict):
         return None
-    latest = _release({"tag_name": saved.get("version"), "html_url": saved.get("url"), "body": saved.get("notes")})
+    latest = _release({"tag_name": saved.get("tag") or saved.get("version"), "html_url": saved.get("url"),
+                       "body": saved.get("notes")})
     return latest if latest and is_newer(latest["version"]) else None
 
 
@@ -108,7 +109,11 @@ def check(rules, force: bool = False) -> dict | None:
     if not force and not rules.get("update.check", True):
         return None
     state = _load_state()
-    if force or time.time() - float(state.get("checked") or 0) >= EVERY:
+    try:
+        checked = float(state.get("checked") or 0)
+    except (TypeError, ValueError):
+        checked = 0.0
+    if force or not 0 <= time.time() - checked < EVERY:  # отметка из будущего (часы сбились) — тоже пора
         try:
             latest = fetch()
         except Unreachable:

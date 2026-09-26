@@ -14,6 +14,7 @@ import time
 import traceback
 import webbrowser
 from collections.abc import Callable
+from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +25,7 @@ from ..analyzers import Finding
 from ..fsutil import display, is_under
 from ..i18n import retranslate, tr
 from ..rules import Rules, ensure_user_rules
+from ..winutil import Busy, exclusive, system_exe
 
 STATIC = Path(__file__).with_name("static")
 FILES = {
@@ -282,6 +284,15 @@ class App:
         return self.start("night", tr("Приступаю: чистка и сортировка"), work)
 
     # ---------------------------------------------------------------- решения
+    @contextmanager
+    def files_lock(self):
+        """Файлы трогает одна операция за раз — и среди окон, и вместе с ночным запуском из Планировщика."""
+        try:
+            with exclusive():
+                yield
+        except Busy as exc:
+            raise ApiError(HTTPStatus.CONFLICT, str(exc)) from exc
+
     def resolve(self, action: str, items: list[dict]) -> dict:
         if action not in ("delete", "restore"):
             raise ApiError(HTTPStatus.BAD_REQUEST, tr("Можно только удалить или вернуть."))
@@ -295,7 +306,7 @@ class App:
         batches = {str(b.path): b for b in review.find_batches()}  # только настоящие партии, не любые пути
         total = review.ApproveResult()
         title = tr("Удалено из «Ready for approval»") if action == "delete" else tr("Возвращено из «Ready for approval»")
-        with journal.Session("approve", title) as session:
+        with self.files_lock(), journal.Session("approve", title) as session:
             for batch_path, ids in wanted.items():
                 batch = batches.get(batch_path)
                 if batch is None:
@@ -319,7 +330,8 @@ class App:
             raise ApiError(HTTPStatus.NOT_FOUND, tr("Такой операции нет в истории."))
         if not info.undoable:
             raise ApiError(HTTPStatus.BAD_REQUEST, tr("Эту операцию отменить нельзя."))
-        result = journal.undo(info)
+        with self.files_lock():
+            result = journal.undo(info)
         return {"restored": result.restored, "irreversible": result.irreversible,
                 "missing": result.missing[:20], "errors": result.errors[:20]}
 
@@ -340,11 +352,11 @@ class App:
         elif what == "ollama-site":
             webbrowser.open(ai_setup.OLLAMA_SITE)  # официальный сайт; сам установщик не скачиваем
         elif what == "rules":
-            subprocess.Popen(["notepad.exe", str(ensure_user_rules())])  # для тех, кто хочет править руками
+            subprocess.Popen([system_exe("notepad.exe"), str(ensure_user_rules())])  # для тех, кто хочет править руками
         elif what == "reveal":
             if not os.path.lexists(target):
                 raise ApiError(HTTPStatus.NOT_FOUND, tr("Файла уже нет на месте."))
-            subprocess.Popen(["explorer", f"/select,{target}"])  # только показывает, ничего не запускает
+            subprocess.Popen([str(config.WINDIR / "explorer.exe"), f"/select,{target}"])  # только показывает
         else:
             raise ApiError(HTTPStatus.BAD_REQUEST, tr("Непонятно, что открыть."))
         return {"ok": True}

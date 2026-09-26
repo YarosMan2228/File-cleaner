@@ -140,7 +140,7 @@ def test_settings_through_the_window(gui):
     current["schedule"] = {"enabled": True, "time": "04:00", "wake": True}
     status, saved = call(gui, "/api/settings", current)
     assert status == 200 and Rules.load().get("ai.min_confidence") == 90    # записано в файл правил
-    assert saved["schedule"] == {"enabled": True, "time": "04:00", "wake": True}   # задача в Планировщике
+    assert [saved["schedule"][k] for k in ("enabled", "time", "wake")] == [True, "04:00", True]   # задача в Планировщике
     current["sectors"].append({"name": "Изображения", "description": "", "keywords": [], "sources": [], "types": []})
     status, data = call(gui, "/api/settings", current)
     assert status == 400 and "папка типа" in data["error"]
