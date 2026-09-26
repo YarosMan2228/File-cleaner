@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import config, report
+from . import config, report, verify
 from .analyzers import Finding
 from .i18n import tr
 from .fsutil import display, human_size, is_under, list_dir, long_path, path_is_link, plural, remove_file
@@ -130,6 +131,41 @@ def return_dir_name() -> str:
 def write_manifest(batch: Batch) -> None:
     data = {"created": batch.created.isoformat(timespec="seconds"), "entries": batch.entries}
     (batch.path / MANIFEST).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def verifiable(entry: dict) -> bool:
+    """Можно ли сверить: архив — с папкой, куда его распаковали; копию — с оригиналом."""
+    rule = str(entry.get("rule") or "")
+    return bool(entry.get("keep")) and (rule == "archives.extracted" or rule.startswith("duplicates."))
+
+
+def verdict(entry: dict) -> verify.Verdict | None:
+    """Чем закончилась сверка, если её уже делали."""
+    return verify.Verdict.from_dict(entry.get("verified"))
+
+
+def check_entry(batch: Batch, entry: dict, progress: Callable[[str], None] = lambda text: None) -> verify.Verdict:
+    """Сверяет объект партии и запоминает итог в записи (сохранить опись — write_manifest)."""
+    staged, keep = batch.path / entry["staged"], Path(entry["keep"])
+    if entry.get("rule") == "archives.extracted":
+        result = verify.check_archive(staged, keep, progress)
+    else:
+        result = verify.check_copy(staged, keep)
+    entry["verified"] = {**result.to_dict(), "at": datetime.now().isoformat(timespec="minutes")}
+    return result
+
+
+def check_batches(batches: list[Batch], progress: Callable[[str], None] = lambda text: None) -> dict[str, int]:
+    """Сверяет в партиях всё, что можно сверить: сколько можно удалять, нельзя и не проверить."""
+    counts = {"ok": 0, "bad": 0, "unknown": 0}
+    for batch in batches:
+        todo = [e for e in batch.present() if verifiable(e)]
+        for entry in todo:
+            ok = check_entry(batch, entry, progress).ok
+            counts["ok" if ok else "bad" if ok is False else "unknown"] += 1
+        if todo:
+            write_manifest(batch)
+    return counts
 
 
 def batch_report(batch: Batch) -> str:

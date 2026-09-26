@@ -185,6 +185,11 @@ window.I18N_EN = {
   'Проверяю…': 'Checking…',
   'У тебя последняя версия.': 'You have the latest version.',
   'Открыть страницу загрузки': 'Open the download page',
+  'Проверить содержимое': 'Check contents',
+  'Проверено {0}: можно удалять — {1}, нельзя — {2}, не проверить — {3}':
+    'Checked {0}: safe to delete — {1}, keep — {2}, could not check — {3}',
+  '«Проверить содержимое» сверяет архивы с папками, куда их распаковали, и копии — с оригиналами. Что не прошло сверку, выбор с себя снимает.':
+    '«Check contents» compares archives with the folders they were extracted to, and copies with the originals. Whatever fails the check gets unselected.',
   'Нужен ключ': 'Key needed',
   'Пробный период: {0}': 'Trial: {0} left',
   'Лицензия': 'License',

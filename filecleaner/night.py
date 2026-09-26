@@ -13,25 +13,23 @@
 """
 from __future__ import annotations
 
-import filecmp
 import json
 import os
 import time
 import traceback
-import zipfile
-import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import analyzers, config, journal, organizer, pipeline, report
+from . import analyzers, config, journal, organizer, pipeline, report, review
 from .ai import LocalAI
 from .analyzers import CheckResult, Finding
-from .fsutil import display, human_size, is_under, key_of, long_path, walk
+from .fsutil import display, human_size, is_under, key_of, long_path
 from .i18n import tr
 from .index import Index
 from .rules import Rules
+from .verify import Verdict, check_archive, check_copy
 from .winutil import exclusive, fixed_drives, go_to_sleep, idle_seconds, keep_awake, shut_down
 
 Log = Callable[[str], None]
@@ -102,8 +100,9 @@ def guard_system_drive(findings: list[Finding]) -> None:
             finding.reason += tr(" — на системном диске вне твоей папки: только отчёт")
 
 
-def _is_verified_zip(finding: Finding) -> bool:
-    return finding.rule == "archives.extracted" and finding.path.suffix.lower() == ".zip"
+def _is_archive(finding: Finding) -> bool:
+    """Распакованный архив: перед удалением он сверяется с папкой — его содержимое остаётся там."""
+    return finding.rule == "archives.extracted"
 
 
 def split(findings: list[Finding], dumps: list[Path], auto_delete: bool = True
@@ -126,8 +125,8 @@ def split(findings: list[Finding], dumps: list[Path], auto_delete: bool = True
         other = gone(key_of(original))
         if other is None:
             return None
-        if _is_verified_zip(other) and other.original is not None and gone(key_of(other.original)) is None:
-            return None  # оригинал — распакованный zip, его содержимое остаётся в папке
+        if _is_archive(other) and other.original is not None and gone(key_of(other.original)) is None:
+            return None  # оригинал — распакованный архив, его содержимое остаётся в папке
         return tr("оригинал тоже на удаление")
 
     auto: list[Finding] = []
@@ -142,9 +141,7 @@ def split(findings: list[Finding], dumps: list[Path], auto_delete: bool = True
         if not any(is_under(finding.path, d) for d in dumps):
             morning.append(finding)  # копии вне свалок — рабочие папки: решаешь утром
             continue
-        if finding.rule == "archives.extracted" and not _is_verified_zip(finding):
-            held.append((finding, tr("архив не zip — его содержимое не сверить")))
-        elif key_of(finding.path) in referenced and finding.rule != "archives.extracted":
+        if key_of(finding.path) in referenced and finding.rule != "archives.extracted":
             held.append((finding, tr("это оригинал для другой копии")))
         elif (why := original_survives(finding)) is not None:
             held.append((finding, why))
@@ -165,58 +162,14 @@ def plan_night(rules: Rules, progress: Log = _quiet, now: float | None = None) -
 
 
 # ======================================================================= сверка перед удалением
-def _same_file(a: Path, b: Path) -> bool:
-    try:
-        return os.path.getsize(long_path(a)) == os.path.getsize(long_path(b)) and \
-            filecmp.cmp(long_path(a), long_path(b), shallow=False)
-    except OSError:
-        return False
-
-
-def _same_tree(copy: Path, original: Path) -> bool:
-    copy_files = {key_of(e.path)[len(key_of(copy)):]: e.path for e, _ in walk(copy, rules=False)}
-    original_files = {key_of(e.path)[len(key_of(original)):] for e, _ in walk(original, rules=False)}
-    if not copy_files or set(copy_files) != original_files:
-        return False
-    return all(_same_file(Path(path), Path(key_of(original) + rel)) for rel, path in copy_files.items())
-
-
-def _crc32(path: str) -> int:
-    crc = 0
-    with open(path, "rb") as fh:
-        while chunk := fh.read(1024 * 1024):
-            crc = zlib.crc32(chunk, crc)
-    return crc
-
-
-def _zip_fully_extracted(archive: Path, folder: Path) -> bool:
-    """Каждый файл архива лежит в папке с тем же размером и той же контрольной суммой."""
-    try:
-        with zipfile.ZipFile(long_path(archive)) as z:
-            entries = [i for i in z.infolist() if not i.is_dir()]
-    except (OSError, zipfile.BadZipFile, RuntimeError, ValueError):
-        return False
-    if not entries:
-        return False
-    for base in (folder, folder.parent):
-        try:
-            if all(os.path.getsize(long_path(base / i.filename)) == i.file_size
-                   and _crc32(long_path(base / i.filename)) == i.CRC for i in entries):
-                return True
-        except (OSError, ValueError):
-            continue
-    return False
-
-
-def verify(finding: Finding) -> bool:
+def verify(finding: Finding) -> Verdict:
+    """Архив — с папкой, куда его распаковали; копия — с оригиналом."""
     original = finding.original
     if original is None:
-        return False
+        return Verdict("no_original")
     if finding.rule == "archives.extracted":
-        return _zip_fully_extracted(finding.path, original)
-    if finding.is_dir:
-        return _same_tree(finding.path, original)
-    return _same_file(finding.path, original)
+        return check_archive(finding.path, original)
+    return check_copy(finding.path, original)
 
 
 def verify_all(plan: NightPlan, progress: Log = _quiet) -> list[Finding]:
@@ -235,11 +188,11 @@ def verify_all(plan: NightPlan, progress: Log = _quiet) -> list[Finding]:
             progress(tr("Сверяю с оригиналом {i}/{total}: {name}", i=i, total=len(group), name=finding.path.name))
             if group is chained and key_of(finding.original) not in verified_keys:
                 plan.held.append((finding, tr("оригинал — архив, который не прошёл сверку")))
-            elif verify(finding):
+            elif (verdict := verify(finding)).ok:
                 verified.append(finding)
                 verified_keys.add(key_of(finding.path))
             else:
-                plan.held.append((finding, tr("при сверке содержимое не совпало с оригиналом")))
+                plan.held.append((finding, tr("при сверке: {why}", why=verdict.text())))
     return verified
 
 
@@ -362,6 +315,11 @@ def _run(rules: Rules, out: NightResult, log: Log, progress: Log) -> None:
         log(tr("   кэши: {junk} ({junk_size}); до утра: {waiting} ({waiting_size})", junk=applied.deleted,
                junk_size=human_size(applied.freed), waiting=applied.staged, waiting_size=human_size(applied.staged_bytes)))
 
+    def check_waiting() -> None:
+        """Утром у отложенных архивов и копий уже написано, можно ли их удалять."""
+        counts = review.check_batches(getattr(out, "batches", []), progress)
+        log(tr("   сверено отложенное: можно удалять {ok}, нельзя {bad}, не проверить {unknown}", **counts))
+
     def sort_all() -> None:
         plan: NightPlan | None = state.get("plan")
         dumps = plan.dumps if plan else analyzers.dump_folders(rules.roots(), rules)
@@ -387,6 +345,7 @@ def _run(rules: Rules, out: NightResult, log: Log, progress: Log) -> None:
     if "plan" in state:
         _stage(tr("Сверяю и удаляю проверенные копии…"), log, out, delete_verified)
         _stage(tr("Удаляю кэши, остальное — в «Ready for approval»…"), log, out, junk_and_morning)
+        _stage(tr("Сверяю отложенное до утра: архивы и копии…"), log, out, check_waiting)
     _stage(tr("Раскладываю файлы…"), log, out, sort_all)
 
 

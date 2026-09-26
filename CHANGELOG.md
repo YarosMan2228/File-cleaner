@@ -1,5 +1,22 @@
 # Что нового
 
+## 0.2.1
+
+- **«Проверить содержимое»** в «На решение»: распакованный архив сверяется с папкой файл за файлом
+  (zip — сам, rar и 7z — через 7-Zip или встроенный в Windows tar), копия — с оригиналом байт в байт.
+  У каждого файла видно «✓ можно удалять» или «✗ не удалять» с причиной; не прошедшее сверку не выбрано.
+- Ночью сверяется всё отложенное до утра — утром итог уже написан. Проверенные rar и 7z в Загрузках
+  и на Рабочем столе удаляются, как проверенные zip.
+- Консоль: `filecleaner verify`.
+
+English:
+- **«Check contents»** in «To decide»: an extracted archive is compared with its folder file by file
+  (zip by itself, rar and 7z via 7-Zip or the tar built into Windows), a copy — with the original byte for byte.
+  Each file shows «✓ safe to delete» or «✗ keep it» with the reason; whatever fails the check is unselected.
+- At night everything set aside for the morning is checked, so the result is already there in the morning.
+  Verified rar and 7z archives in Downloads and on the Desktop are deleted just like verified zips.
+- Console: `filecleaner verify`.
+
 ## 0.2.0
 
 - **Каждую ночь сам:** «Приступай» запускается по расписанию (Планировщик Windows), может будить компьютер,

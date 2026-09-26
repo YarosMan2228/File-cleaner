@@ -249,3 +249,29 @@ def test_license_needed_after_trial(gui, monkeypatch):
     status, info = call(gui, "/api/license", {"key": licensing.issue(secret, "Покупатель")})
     assert status == 200 and info["state"] == "licensed" and info["name"] == "Покупатель"
     assert call(gui, "/api/status")[1]["license"]["state"] == "licensed"
+
+
+def test_check_contents_before_deleting(gui, sandbox):
+    """«Проверить содержимое»: архив сверяется с папкой; итог виден в списке и остаётся после перезапуска."""
+    import zipfile
+
+    dl = sandbox / "Downloads"
+    write(dl / "pack" / "a.txt", b"a" * 3000)
+    write(dl / "old" / "b.txt", b"B" * 3000)                            # в папке изменённая версия
+    for name, member, data in (("pack.zip", "a.txt", b"a" * 3000), ("old.zip", "b.txt", b"b" * 3000)):
+        with zipfile.ZipFile(dl / name, "w") as z:
+            z.writestr(member, data)
+    findings = [Finding("archives.extracted", "Распакованные архивы", dl / name, 200, "review", "рядом папка",
+                        original=dl / name.removesuffix(".zip")) for name in ("pack.zip", "old.zip")]
+    with journal.Session("check", "Проверка") as session:
+        review.stage(findings, session)
+
+    batch = call(gui, "/api/review")[1][0]
+    assert all(item["verifiable"] and item["verified"] is None for item in batch["items"])
+    status, _ = call(gui, "/api/verify", {"items": [{"batch": batch["batch"], "id": i["id"]} for i in batch["items"]]})
+    task = wait_task(gui)
+    assert status == 200 and task["error"] is None and task["result"] == {"ok": 1, "bad": 1, "unknown": 0}
+    verdicts = {i["name"]: i["verified"] for i in call(gui, "/api/review")[1][0]["items"]}
+    assert verdicts["pack.zip"]["ok"] is True and "можно удалять" in verdicts["pack.zip"]["text"]
+    assert verdicts["old.zip"]["ok"] is False and "b.txt" in verdicts["old.zip"]["text"]
+

@@ -1,7 +1,6 @@
 """Сортировка: файлы и папки раскладываются по секторам (Учёба, Работа…) и типам (Документы, Видео…)."""
 from __future__ import annotations
 
-import filecmp
 import os
 import time
 from collections import Counter
@@ -21,6 +20,7 @@ from .fsutil import (
 from .i18n import all_type_names, tr, type_name
 from .journal import Session
 from .rules import Rules
+from .verify import same_file
 from .winutil import read_zone_source
 
 Progress = Callable[[str], None]
@@ -115,10 +115,7 @@ def sector_dir(root: Path, sector: dict) -> Path:
 
 
 def _same_content(a: Path, b: Path) -> bool:
-    try:
-        return filecmp.cmp(long_path(a), long_path(b), shallow=False)
-    except OSError:
-        return False
+    return same_file(a, b)  # байт в байт, без кэша filecmp
 
 
 # ======================================================================= план

@@ -545,4 +545,32 @@ EN: dict[str, str] = {
     "В правилах {key} = \"delete\": твои файлы без проверки не удаляются — поставь \"review\" (перенос в «{folder}»).": "In the rules, {key} = \"delete\": your files are never deleted unchecked — use \"review\" (move to «{folder}»).",
     "В правилах night.after = {value}: можно только nothing, sleep, shutdown.": "In the rules, night.after = {value}: only nothing, sleep, shutdown are allowed.",
     "В правилах {key}: {error}": "In the rules, {key}: {error}",
+    # сверка содержимого
+    "проверено: все {files} из архива есть в папке и совпадают — можно удалять": "checked: all {files} from the archive are in the folder and match — safe to delete",
+    "проверено: совпадает с оригиналом байт в байт — можно удалять": "checked: identical to the original byte for byte — safe to delete",
+    "в папке нет {count} из архива, например «{name}» — не удалять": "the folder is missing {count} from the archive, e.g. «{name}» — keep it",
+    "«{name}» в папке изменён, в архиве — другая версия: не удалять": "«{name}» was changed in the folder and the archive has another version — keep it",
+    "отличается от оригинала — не удалять": "differs from the original — keep it",
+    "папки, куда распакован архив, нет на месте — не удалять": "the folder the archive was extracted to is gone — keep it",
+    "оригинала нет на месте — не удалять": "the original is gone — keep it",
+    "архив с паролем — содержимое не проверить": "password-protected archive — its contents cannot be checked",
+    "архив не открывается — возможно, повреждён": "the archive does not open — it may be damaged",
+    "Windows сама этот архив не открывает — установи 7-Zip (бесплатно) и проверь снова": "Windows cannot open this archive by itself — install 7-Zip (free) and check again",
+    "в архиве нет файлов — проверять нечего": "the archive has no files — nothing to check",
+    "проверка прервана": "check interrupted",
+    "Сверяю «{name}»: {i}/{total}": "Checking «{name}»: {i}/{total}",
+    "Распаковываю «{name}» во временную папку…": "Extracting «{name}» to a temporary folder…",
+    # ночь: сверка отложенного
+    "при сверке: {why}": "checked: {why}",
+    "Сверяю отложенное до утра: архивы и копии…": "Checking what waits for the morning: archives and copies…",
+    "   сверено отложенное: можно удалять {ok}, нельзя {bad}, не проверить {unknown}": "   checked what waits: safe to delete {ok}, keep {bad}, could not check {unknown}",
+    # окно: проверить содержимое
+    "Проверяю {i}/{total}: {name}": "Checking {i}/{total}: {name}",
+    "Проверяю содержимое": "Checking contents",
+    # консоль: сверка
+    "Сверять нечего: в «{folder}» нет архивов и копий.": "Nothing to check: «{folder}» has no archives or copies.",
+    "Можно удалять: {ok}, нельзя: {bad}, не проверить: {unknown}.": "Safe to delete: {ok}, keep: {bad}, could not check: {unknown}.",
+    "сверить отложенное: архивы — с распакованными папками, копии — с оригиналами": "check what waits: archives against the extracted folders, copies against the originals",
+    # сверка: несколько изменённых
+    "в папке изменены {count}, например «{name}» — в архиве другие версии: не удалять": "{count} were changed in the folder, e.g. «{name}» — the archive has other versions: keep it",
 }

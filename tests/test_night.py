@@ -41,7 +41,7 @@ def build(home: Path) -> None:
     os.utime(dl / "pack (1).zip", (time.time() - 40 * 86400,) * 2)
     make_zip(dl / "broken.zip", {"c.txt": b"c" * 3000})     # в папке тот же размер, но другое содержимое
     write(dl / "broken" / "c.txt", b"X" * 3000)
-    write(dl / "notes.7z", b"7z" * 2000)                    # не zip — содержимое не сверить
+    write(dl / "notes.7z", b"7z" * 2000)                    # испорченный 7z — не открыть, значит не сверить
     write(dl / "notes" / "n.txt", b"n" * 100)
 
 
@@ -63,14 +63,14 @@ def names(findings) -> set[str]:
 def test_split_deletes_only_verified_copies_in_dumps(sandbox, rules):
     build(sandbox)
     plan = plan_for(sandbox, rules)
-    assert {"report (1).pdf", "pack.zip", "pack (1).zip", "broken.zip"} <= names(plan.auto)
+    assert {"report (1).pdf", "pack.zip", "pack (1).zip", "broken.zip", "notes.7z"} <= names(plan.auto)
     assert "plan (1).pdf" in names(plan.morning)                       # рабочая папка — решаешь утром
-    assert "notes.7z" in names(f for f, _ in plan.held)                 # не zip — не сверить
 
     verified = night.verify_all(plan)
     assert {"report (1).pdf", "pack.zip", "pack (1).zip"} == names(verified)
     held = {f.path.name: why for f, why in plan.held}
-    assert "не совпало" in held["broken.zip"]                            # контрольная сумма не сошлась
+    assert "изменён" in held["broken.zip"]                               # контрольная сумма не сошлась
+    assert "откры" in held["notes.7z"]                                   # архив не открыть — ждёт утра
 
 
 def test_copy_of_zip_waits_if_zip_fails_check(sandbox, rules):

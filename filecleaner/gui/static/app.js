@@ -160,6 +160,8 @@ const state = {
   settings: null,          // как сохранено
   draft: null,             // что сейчас в форме
   aiSetup: null,           // установлена ли Ollama, запущена ли, есть ли модель
+  checking: new Set(),     // что сейчас сверяется: не прошедшее сверку потом снимается с выбора
+  seen: new Set(),         // что уже показывали: не прошедшее сверку (например, ночью) сначала не выбрано
 };
 
 // ================================================================ вкладки
@@ -354,6 +356,7 @@ function setBusy(busy) {
   state.busy = busy;
   $('#btn-preview').disabled = busy;
   $('#btn-run').disabled = busy || !state.plan;
+  document.querySelectorAll('.btn-verify').forEach((button) => { button.disabled = busy; });
   updateSelection();
 }
 
@@ -382,6 +385,9 @@ function watchTask() {
 function renderTask() {
   const task = state.task;
   const panel = $('#task-panel');
+  const checking = Boolean(task && task.running && task.kind === 'verify');
+  $('#review-progress').hidden = !checking;
+  if (checking) $('#review-progress').textContent = task.progress || task.title;
   if (!task || !task.running) {
     panel.hidden = true;
     setBusy(false);
@@ -410,6 +416,11 @@ function onTaskFinished(task, quiet = false) {
     state.plan = task.result;
     state.result = null;
     renderPlan();
+  }
+  if (task.kind === 'verify' && task.result && !quiet) {
+    const r = task.result;
+    toast(t('Проверено {0}: можно удалять — {1}, нельзя — {2}, не проверить — {3}',
+      r.ok + r.bad + r.unknown, r.ok, r.bad, r.unknown), r.bad > 0);
   }
   if (task.kind === 'pull' && !task.error && !quiet) {
     toast(t('Модель скачана — ИИ готов раскладывать.'));
@@ -548,6 +559,16 @@ function updateSelection() {
 async function loadReview() {
   try {
     state.review = await api('/api/review');
+    for (const item of allItems()) {
+      if (state.seen.has(item.key)) continue;
+      state.seen.add(item.key);
+      if (item.verified && item.verified.ok === false) setSelected(item, false);  // «не удалять» — не выбрано
+    }
+    if (!(state.task && state.task.running)) {  // не прошедшее сверку снимаем с выбора, чтобы не удалить случайно
+      allItems().filter((item) => state.checking.has(item.key) && !(item.verified && item.verified.ok))
+        .forEach((item) => setSelected(item, false));
+      state.checking.clear();
+    }
   } catch (error) {
     $('#review-list').replaceChildren(h('p', { class: 'errors' }, t('Не удалось загрузить: {0}', error.message)));
     return;
@@ -579,8 +600,20 @@ function renderReview() {
   updateSelection();
 }
 
+function verdictNote(verdict) {
+  if (!verdict) return null;
+  const kind = verdict.ok ? 'ok' : verdict.ok === false ? 'bad' : 'unknown';
+  return h('span', { class: `verdict ${kind}` }, `${{ ok: '✓', bad: '✗', unknown: '?' }[kind]} ${verdict.text}`);
+}
+
+function verifyItems(items) {
+  items.forEach((item) => state.checking.add(item.key));
+  startTask('/api/verify', { items: items.map((item) => ({ batch: item.batch, id: item.id })) });
+}
+
 function groupSection(name, rows) {
   rows.sort((a, b) => b.size - a.size);
+  const checkable = rows.filter((row) => row.verifiable);
   const groupBox = h('input', { type: 'checkbox', 'aria-label': t('Выбрать всю группу «{0}»', name) });
   const boxes = [];
   const syncGroup = () => {
@@ -606,14 +639,17 @@ function groupSection(name, rows) {
       h('td', { class: 'pick' }, box),
       h('td', { class: 'name' }, h('strong', {}, item.name), h('span', { class: 'sub' }, t('из {0}', item.from))),
       h('td', { class: 'num' }, size(item.size)),
-      h('td', {}, item.reason),
+      h('td', {}, item.reason, verdictNote(item.verified)),
       h('td', {}, item.keep || '—'),
       h('td', { class: 'act' }, reveal));
   });
   syncGroup();
   return h('section', { class: 'group', 'aria-label': name },
     h('div', { class: 'group-head' }, groupBox, h('h2', {}, name),
-      h('span', { class: 'meta' }, `${objects(rows.length)} · ${size(total(rows))}`)),
+      h('span', { class: 'meta' }, `${objects(rows.length)} · ${size(total(rows))}`),
+      checkable.length ? h('button', {
+        type: 'button', class: 'btn small btn-verify', disabled: state.busy, onclick: () => verifyItems(checkable),
+      }, t('Проверить содержимое')) : null),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {},
         h('th', { class: 'pick' }, h('span', { class: 'sr-only' }, t('Выбор'))),

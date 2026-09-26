@@ -122,13 +122,27 @@ def review_list() -> list[dict]:
     for batch in review.find_batches():
         items = [{
             "id": e["staged"], "name": Path(e["staged"]).name, "group": retranslate(e.get("group", "")),
-            "reason": retranslate(e.get("reason", "")), "size": e.get("size", 0), "dir": bool(e.get("dir")),
+            "reason": _reason(e), "size": e.get("size", 0), "dir": bool(e.get("dir")),
             "from": display(Path(e["original"]).parent), "keep": display(e["keep"]) if e.get("keep") else "",
+            "verifiable": review.verifiable(e), "verified": _verdict(e),
         } for e in batch.present()]
         if items:
             batches.append({"batch": str(batch.path), "name": batch.name,
                             "created": batch.created.isoformat(timespec="minutes"), "items": items})
     return batches
+
+
+def _reason(entry: dict) -> str:
+    reason = retranslate(entry.get("reason", ""))
+    if review.verdict(entry):  # сверка была — оговорка «содержимое не проверял» уже неправда
+        for note in (" (содержимое не проверял)", " (contents not checked)"):
+            reason = reason.replace(note, "")
+    return reason
+
+
+def _verdict(entry: dict) -> dict | None:
+    found = review.verdict(entry)
+    return {"ok": found.ok, "text": found.text()} if found else None
 
 
 def _still_undoable(session: journal.SessionInfo) -> int:
@@ -322,6 +336,29 @@ class App:
         return {"deleted": total.deleted, "freed": total.freed, "restored": len(total.restored),
                 "errors": total.errors}
 
+    def check_items(self, items: list[dict]) -> dict:
+        """«Проверить содержимое»: архивы — с папками, копии — с оригиналами; итог — в описи партии."""
+        wanted: dict[str, set[str]] = {}
+        for item in items:
+            wanted.setdefault(str(item.get("batch", "")), set()).add(str(item.get("id", "")))
+
+        def work(task: Task) -> dict:
+            counts = {"ok": 0, "bad": 0, "unknown": 0}
+            with exclusive():
+                todo = [(batch, entry) for batch in review.find_batches() if str(batch.path) in wanted
+                        for entry in batch.present()
+                        if entry["staged"] in wanted[str(batch.path)] and review.verifiable(entry)]
+                for i, (batch, entry) in enumerate(todo, 1):
+                    task.fraction = (i - 1) / len(todo)
+                    task.say(tr("Проверяю {i}/{total}: {name}", i=i, total=len(todo), name=Path(entry["staged"]).name))
+                    found = review.check_entry(batch, entry, lambda text: setattr(task, "progress", text))
+                    review.write_manifest(batch)  # итог не пропадёт, даже если окно закроют
+                    task.say("   " + found.text())
+                    counts["ok" if found.ok else "bad" if found.ok is False else "unknown"] += 1
+            task.fraction = 1.0
+            return counts
+        return self.start("verify", tr("Проверяю содержимое"), work)
+
     def undo(self, session_id: str) -> dict:
         if self.busy:
             raise ApiError(HTTPStatus.CONFLICT, tr("Идёт другая операция — дождись её конца."))
@@ -441,6 +478,8 @@ class App:
             return self.pull_model()
         if path == "/api/ai/disable":
             return self.disable_ai()
+        if path == "/api/verify":
+            return self.check_items(list(body.get("items") or []))
         if path == "/api/license":
             return self.activate_license(str(body.get("key", "")))
         if path == "/api/update":

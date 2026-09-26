@@ -734,6 +734,26 @@ def cmd_gui(args, rules: Rules, interactive: bool = False) -> int:
     return run(lambda: Rules.load(path), port=args.port, show_window=not args.no_window)
 
 
+def cmd_verify(args, rules: Rules, interactive: bool = False) -> int:
+    batches = [b for b in review.find_batches() if any(review.verifiable(e) for e in b.present())]
+    if not batches:
+        print(tr("Сверять нечего: в «{folder}» нет архивов и копий.", folder=config.REVIEW_DIR_NAME))
+        return 0
+    progress = Progress()
+    counts = {"ok": 0, "bad": 0, "unknown": 0}
+    marks = {"ok": green("✓"), "bad": red("✗"), "unknown": yellow("?")}
+    for batch in batches:
+        for entry in [e for e in batch.present() if review.verifiable(e)]:
+            found = review.check_entry(batch, entry, progress)
+            progress.clear()
+            kind = "ok" if found.ok else "bad" if found.ok is False else "unknown"
+            counts[kind] += 1
+            print(f"  {marks[kind]} {Path(entry['staged']).name} — {found.text()}")
+        review.write_manifest(batch)
+    print(bold(tr("Можно удалять: {ok}, нельзя: {bad}, не проверить: {unknown}.", **counts)))
+    return 0
+
+
 def cmd_license(args, rules: Rules, interactive: bool = False) -> int:
     if args.key:
         try:
@@ -935,6 +955,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--at", metavar=tr("ЧЧ:ММ"), help=tr("во сколько запускать, например 03:00"))
     p.add_argument("--no-wake", action="store_true", help=tr("не будить компьютер ради этого"))
     p.add_argument("--off", action="store_true", help=tr("выключить ночной запуск"))
+    add("verify", cmd_verify, tr("сверить отложенное: архивы — с распакованными папками, копии — с оригиналами"))
     add("update", cmd_update, tr("проверить, вышла ли новая версия"))
     p = add("license", cmd_license, tr("лицензия: показать или ввести ключ"))
     p.add_argument("key", nargs="*", help=tr("ключ FC1-… из письма"))
@@ -1000,7 +1021,7 @@ def main(argv: list[str] | None = None) -> int:
     except RulesError as exc:
         print(red(str(exc)))
         return 2
-    changes = args.command in ("approve", "undo") or getattr(args, "apply", False)
+    changes = args.command in ("approve", "undo", "verify") or getattr(args, "apply", False)
     try:
         if not changes:
             return args.func(args, rules) or 0

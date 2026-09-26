@@ -177,6 +177,10 @@ td.pick input, th.pick input, .group-head input { width: 16px; height: 16px; acc
 .group-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--surface-2); }
 .group-head h2 { font-size: 15px; }
 .group-head .meta { margin-left: auto; }
+.verdict { display: block; margin-top: 4px; font-size: 13px; font-weight: 600; }
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--danger); }
+.verdict.unknown { color: var(--muted); }
 .group table td:first-child, .group table th:first-child { padding-left: 16px; }
 .actionbar {
   position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 6;
