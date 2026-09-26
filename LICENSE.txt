@@ -6,7 +6,10 @@ If you do not agree, do not install or use the Software.
 
 1. LICENSE. You receive a non-exclusive, non-transferable license to install and use the
    Software on computers you own or control, for personal use or for the internal needs of
-   your organisation.
+   your organisation. You may use the Software free of charge for 30 days to evaluate it.
+   After that, cleaning, sorting and deleting require a paid license key; seeing what the
+   Software would do, History, Undo and returning files to their places stay available without
+   a key. A license key is issued to you personally: do not share or publish it.
 
 2. RESTRICTIONS. You may not sell, rent, sublicense, distribute or publish the Software or any
    part of it, remove copyright notices, or reverse engineer, decompile or disassemble it, except
@@ -54,7 +57,10 @@ FILE CLEANER — ЛИЦЕНЗИОННОЕ СОГЛАШЕНИЕ С ПОЛЬЗОВ
 
 1. ЛИЦЕНЗИЯ. Ты получаешь неисключительное право без права передачи устанавливать и
    использовать Программу на компьютерах, которыми владеешь или распоряжаешься, — для
-   личных целей или внутренних нужд своей организации.
+   личных целей или внутренних нужд своей организации. Первые 30 дней Программой можно
+   пользоваться бесплатно, чтобы её оценить. После этого для чистки, сортировки и удаления
+   нужен платный ключ; смотреть, что Программа сделала бы, историю, отмену и возврат файлов
+   на место можно и без ключа. Ключ выдаётся лично тебе: не передавай и не публикуй его.
 
 2. ОГРАНИЧЕНИЯ. Нельзя продавать, сдавать в аренду, сублицензировать, распространять или
    публиковать Программу или её части, удалять уведомления об авторских правах, а также

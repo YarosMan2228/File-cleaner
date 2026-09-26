@@ -104,6 +104,13 @@ ollama pull qwen2.5:7b
 собрать (`python packaging/build.py`) и выпустить (`python packaging/release.py --publish`, нужен `gh auth login`).
 Без `--publish` скрипт только проверяет, что всё готово.
 
+### Лицензия и пробный период
+
+Первые 30 дней работает всё. Потом без ключа можно смотреть, что будет сделано, историю, отменять и возвращать
+файлы на место, а чистить, раскладывать и удалять — только с ключом: «Настройки» → «Лицензия»
+или `filecleaner license FC1-…`. Ключ проверяется на этом компьютере, без интернета.
+Как выпускать ключи и продавать — [docs/SELLING.md](docs/SELLING.md).
+
 ## Установка и запуск
 
 Нужен Python 3.11+ (сторонние библиотеки не нужны).
@@ -126,6 +133,7 @@ cd File-cleaner
 python -m filecleaner night --apply        # приступай: всё за один раз, можно на ночь
 python -m filecleaner schedule --at 03:00  # приступай каждую ночь в 03:00
 python -m filecleaner update               # вышла ли новая версия
+python -m filecleaner license FC1-…        # ввести ключ (без ключа — показать лицензию)
 python -m filecleaner scan                 # что занимает место
 python -m filecleaner check                # что лишнее (только показать)
 python -m filecleaner check --apply        # кэши удалить, остальное → Ready for approval

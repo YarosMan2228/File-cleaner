@@ -18,7 +18,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .. import __version__, ai_setup, config, i18n, journal, night, review, schedule, settings, update
+from .. import __version__, ai_setup, config, i18n, journal, licensing, night, review, schedule, settings, update
 from ..ai import LocalAI
 from ..analyzers import Finding
 from ..fsutil import display, is_under
@@ -156,6 +156,7 @@ class App:
         self.last_seen = time.monotonic()
         self._ai: tuple[float, dict] | None = None
         self.update: dict | None = None  # вышедшая новая версия, если есть
+        self._license: tuple[float, dict] | None = None
         self.apply_language()
 
     def apply_language(self) -> None:
@@ -179,6 +180,7 @@ class App:
             "version": __version__, "lang": i18n.language(), "ai": self.ai_status(), "last": night.last_run(),
             "review": {"count": len(waiting), "bytes": sum(i["size"] for i in waiting)},
             "task": self.task.snapshot() if self.task else None, "update": self.update,
+            "license": self.license_status(),
         }
 
     def check_update(self) -> dict:
@@ -197,6 +199,27 @@ class App:
             except Exception:  # noqa: BLE001 — проверка обновлений не должна мешать работе
                 pass
         threading.Thread(target=work, name="filecleaner-update", daemon=True).start()
+
+    def license_status(self) -> dict:
+        if self._license is None or time.monotonic() - self._license[0] > AI_TTL:
+            self._license = (time.monotonic(), licensing.status())
+        return self._license[1]
+
+    def require_license(self) -> None:
+        """Чистить, раскладывать и удалять — в пробный период или с ключом."""
+        self._license = None  # пробный период мог закончиться только что
+        try:
+            licensing.require()
+        except licensing.LicenseError as exc:
+            raise ApiError(HTTPStatus.PAYMENT_REQUIRED, str(exc)) from exc
+
+    def activate_license(self, key: str) -> dict:
+        try:
+            info = licensing.activate(key)
+        except licensing.LicenseError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+        self._license = None
+        return info
 
     # ---------------------------------------------------------------- задачи
     def start(self, kind: str, title: str, work: Callable[[Task], dict]) -> dict:
@@ -229,6 +252,7 @@ class App:
     def run_night(self, after: str) -> dict:
         if after not in night.AFTER:
             raise ApiError(HTTPStatus.BAD_REQUEST, tr("Непонятно, что сделать в конце."))
+        self.require_license()
 
         def work(task: Task) -> dict:
             log_path = config.DATA_DIR / "logs" / f"night-{time.strftime('%Y%m%d-%H%M')}.log"
@@ -261,6 +285,8 @@ class App:
     def resolve(self, action: str, items: list[dict]) -> dict:
         if action not in ("delete", "restore"):
             raise ApiError(HTTPStatus.BAD_REQUEST, tr("Можно только удалить или вернуть."))
+        if action == "delete":
+            self.require_license()  # вернуть на место можно всегда
         if self.busy:
             raise ApiError(HTTPStatus.CONFLICT, tr("Идёт другая операция — дождись её конца."))
         wanted: dict[str, set[str]] = {}
@@ -305,6 +331,10 @@ class App:
             if not ours or target.suffix.lower() != ".html" or not target.exists():
                 raise ApiError(HTTPStatus.BAD_REQUEST, tr("Это не отчёт программы."))
             os.startfile(target)  # type: ignore[attr-defined]  # откроется в браузере
+        elif what == "buy":
+            if not licensing.BUY_URL:
+                raise ApiError(HTTPStatus.NOT_FOUND, tr("Ссылки на магазин пока нет."))
+            webbrowser.open(licensing.BUY_URL)
         elif what == "update":
             webbrowser.open((self.update or {}).get("url") or update.PAGE + "latest")  # только страница выпусков
         elif what == "ollama-site":
@@ -399,6 +429,8 @@ class App:
             return self.pull_model()
         if path == "/api/ai/disable":
             return self.disable_ai()
+        if path == "/api/license":
+            return self.activate_license(str(body.get("key", "")))
         if path == "/api/update":
             return self.check_update()
         if path == "/api/stay-awake":

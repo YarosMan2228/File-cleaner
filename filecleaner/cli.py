@@ -8,7 +8,8 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from . import __version__, analyzers, compress, config, fsutil, i18n, journal, night, organizer, pipeline, report, review
+from . import (__version__, analyzers, compress, config, fsutil, i18n, journal, licensing, night, organizer, pipeline,
+               report, review)
 from .ai import LocalAI
 from .fsutil import display, human_size, plural
 from .i18n import tr
@@ -236,6 +237,28 @@ def _parse_numbers(answer: str, limit: int) -> set[int] | None:
     return numbers
 
 
+def _license_line(info: dict) -> str:
+    if info["state"] == "licensed":
+        return tr("Лицензия на имя: {name}.", name=info["name"])
+    if info["state"] == "trial":
+        return tr("Пробный период: осталось {days}.", days=plural(info["days_left"], "день", "дня", "дней"))
+    return tr("Пробный период закончился. Ввести ключ: filecleaner license FC1-…")
+
+
+def _licensed(unattended: bool = False) -> bool:
+    """Чистить, раскладывать и удалять можно в пробный период и с ключом; смотреть — всегда."""
+    try:
+        licensing.require()
+    except licensing.LicenseError as exc:
+        print(red(str(exc)))
+        if unattended:  # ночной запуск из Планировщика: окна нет — причина остаётся в журнале
+            (config.DATA_DIR / "logs").mkdir(parents=True, exist_ok=True)
+            with open(config.DATA_DIR / "logs" / "night-errors.log", "a", encoding="utf-8") as fh:
+                fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M')} {exc}\n")
+        return False
+    return True
+
+
 def cmd_check(args, rules: Rules, interactive: bool = False) -> int:
     roots = rules.roots()
     progress = Progress()
@@ -257,6 +280,8 @@ def cmd_check(args, rules: Rules, interactive: bool = False) -> int:
         return 0
 
     skip: set[str] = set()
+    if (interactive or getattr(args, "apply", False)) and not _licensed():
+        return 3
     if interactive:
         while True:
             answer = ask("\nВыполнить? Enter — да; номера групп через запятую — пропустить их; 0 — отмена: ")
@@ -307,6 +332,8 @@ def cmd_approve(args, rules: Rules, interactive: bool = False) -> int:
         present = batch.present()
         print(f"  {i}. {batch.name} — {objects(len(present))}, {human_size(batch.size())}")
         print(dim(f"     {batch.path}"))
+    if not _licensed():
+        return 3
     chosen = batches
     if interactive:
         answer = ask("Какие утвердить? Enter — все, номера через запятую, 0 — отмена: ")
@@ -440,6 +467,8 @@ def cmd_sort(args, rules: Rules, interactive: bool = False) -> int:
     elif not args.apply:
         print(cyan("Это был просмотр. Выполнить: filecleaner sort --apply"))
         return 0
+    if not _licensed():
+        return 3
     if not getattr(args, "yes", False) and not confirm("Разложить?"):
         print("Отменено, ничего не тронуто.")
         return 0
@@ -502,6 +531,8 @@ def cmd_compress(args, rules: Rules, interactive: bool = False) -> int:
     if not interactive and not args.apply:
         print(cyan("Это был просмотр. Выполнить: filecleaner compress ПАПКА --apply"))
         return 0
+    if not _licensed():
+        return 3
     if not getattr(args, "yes", False) and not confirm("Сжать?"):
         return 0
     with journal.Session("compress", tr("Сжатие {folder}", folder=folder.name)) as session:
@@ -639,6 +670,22 @@ def cmd_gui(args, rules: Rules, interactive: bool = False) -> int:
     return run(lambda: Rules.load(path), port=args.port, show_window=not args.no_window)
 
 
+def cmd_license(args, rules: Rules, interactive: bool = False) -> int:
+    if args.key:
+        try:
+            info = licensing.activate(" ".join(args.key))
+        except licensing.LicenseError as exc:
+            print(red(str(exc)))
+            return 1
+        print(green(tr("Ключ принят, спасибо! {line}", line=_license_line(info))))
+        return 0
+    info = licensing.status()
+    print(_license_line(info))
+    if info["state"] != "licensed" and info["buy_url"]:
+        print(tr("Купить ключ: {url}", url=info["buy_url"]))
+    return 0
+
+
 def cmd_update(args, rules: Rules, interactive: bool = False) -> int:
     from . import update
 
@@ -695,6 +742,8 @@ def cmd_night(args, rules: Rules, interactive: bool = False) -> int:
         print(f"  Только в отчёт: {human_size(sum(f.size for f in plan.check.by_mode('report')))}")
         print(cyan("Это был просмотр. Выполнить: filecleaner night --apply"))
         return 0
+    if not _licensed(unattended=getattr(args, "yes", False)):
+        return 3
     if not getattr(args, "yes", False) and not confirm("\nПриступить? Дальше можно уйти — всё сделается само"):
         print("Отменено, ничего не тронуто.")
         return 0
@@ -743,6 +792,9 @@ def menu() -> int:
     if waiting:
         size = sum(b.size() for b in waiting)
         print(yellow(f"В «{config.REVIEW_DIR_NAME}» ждёт решения {human_size(size)} — пункт 5."))
+    info = licensing.status()
+    if info["state"] == "expired" or (info["state"] == "trial" and info["days_left"] <= 7):
+        print(yellow(_license_line(info)))
     while True:
         print()
         for key, title, _ in MENU:
@@ -787,6 +839,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-wake", action="store_true", help="не будить компьютер ради этого")
     p.add_argument("--off", action="store_true", help="выключить ночной запуск")
     add("update", cmd_update, "проверить, вышла ли новая версия")
+    p = add("license", cmd_license, "лицензия: показать или ввести ключ")
+    p.add_argument("key", nargs="*", help="ключ FC1-… из письма")
     p = add("gui", cmd_gui, "окно программы: всё кнопками")
     p.add_argument("--no-window", action="store_true", help="не открывать окно — только напечатать адрес")
     p.add_argument("--port", type=int, default=0, help="порт (по умолчанию — любой свободный)")

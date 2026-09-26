@@ -17,13 +17,25 @@
     <button type="button" role="tab" id="tab-history" aria-controls="view-history" aria-selected="false" tabindex="-1">История</button>
     <button type="button" role="tab" id="tab-settings" aria-controls="view-settings" aria-selected="false" tabindex="-1">Настройки</button>
   </nav>
-  <button type="button" class="update" id="update-chip" hidden></button>
-  <button type="button" class="ai" id="ai-status"><span class="dot" aria-hidden="true"></span><span id="ai-text">ИИ: проверяю…</span></button>
+  <div class="status-bar">
+    <button type="button" class="chip warn" id="license-chip" hidden></button>
+    <button type="button" class="chip" id="update-chip" hidden></button>
+    <button type="button" class="ai" id="ai-status"><span class="dot" aria-hidden="true"></span><span id="ai-text">ИИ: проверяю…</span></button>
+  </div>
 </header>
 
 <main>
   <!-- ============================================================ Главная -->
   <section id="view-home" role="tabpanel" aria-labelledby="tab-home">
+    <div class="panel" id="license-panel" hidden>
+      <h2>Пробный период закончился</h2>
+      <p class="lead">Смотреть, что будет сделано, можно и дальше. Чтобы чистить, раскладывать и удалять, нужен ключ.</p>
+      <div class="actions">
+        <button type="button" class="btn primary" id="btn-license-enter">Ввести ключ</button>
+        <button type="button" class="btn" id="btn-license-buy" hidden>Купить ключ</button>
+      </div>
+    </div>
+
     <div class="panel" id="ai-panel" tabindex="-1" hidden>
       <div class="panel-head">
         <h2>Настрой ИИ</h2>

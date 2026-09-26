@@ -6,6 +6,7 @@ window.I18N_PLURALS_EN = {
   'объект': ['object', 'objects'],
   'файл': ['file', 'files'],
   'папка': ['folder', 'folders'],
+  'день': ['day', 'days'],
 };
 
 window.I18N_EN = {
@@ -180,6 +181,19 @@ window.I18N_EN = {
   'Проверяю…': 'Checking…',
   'У тебя последняя версия.': 'You have the latest version.',
   'Открыть страницу загрузки': 'Open the download page',
+  'Нужен ключ': 'Key needed',
+  'Пробный период: {0}': 'Trial: {0} left',
+  'Лицензия': 'License',
+  'Ключ из письма': 'Key from the email',
+  'Активировать': 'Activate',
+  'Ключ принят. Спасибо!': 'Key accepted. Thank you!',
+  'Купить ключ': 'Buy a key',
+  'Ввести ключ': 'Enter a key',
+  'Пробный период закончился': 'The trial is over',
+  'Смотреть, что будет сделано, можно и дальше. Чтобы чистить, раскладывать и удалять, нужен ключ.': 'You can still see what would be done. Cleaning, sorting and deleting need a key.',
+  'Лицензия на имя: {0}. Спасибо за покупку!': 'Licensed to {0}. Thank you for your purchase!',
+  'Пробный период: осталось {0}. Потом без ключа можно будет смотреть, что будет сделано, но не чистить и не раскладывать.': 'Trial: {0} left. After that, without a key you can still see what would be done, but not clean or sort.',
+  'Пробный период закончился: смотреть, что будет сделано, можно, а чистить, раскладывать и удалять — нужен ключ.': 'The trial is over: you can see what would be done, but cleaning, sorting and deleting need a key.',
   'Сайты, откуда скачано': 'Sites the files come from',
   'Через запятую: coursera.org, github.com': 'Comma-separated: coursera.org, github.com',
   'Все файлы этих типов — сюда': 'All files of these types go here',

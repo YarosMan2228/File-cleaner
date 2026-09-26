@@ -218,6 +218,14 @@ async function refreshStatus(first = false) {
 }
 
 const openUpdate = () => api('/api/open', { what: 'update' }).catch((error) => toast(error.message, true));
+const openBuy = () => api('/api/open', { what: 'buy' }).catch((error) => toast(error.message, true));
+const days = (n) => plural(n, 'день', 'дня', 'дней');
+
+function openLicense() {
+  state.focusLicense = true;
+  if (state.draft) renderSettings();
+  showView('settings');
+}
 
 function renderStatus() {
   const { ai, review, last, update } = state.status;
@@ -225,6 +233,14 @@ function renderStatus() {
   fresh.hidden = !update;
   fresh.textContent = update ? t('Вышла версия {0}', update.version) : '';
   fresh.title = update ? update.notes : '';
+  const license = state.status.license;
+  const expired = Boolean(license && license.state === 'expired');
+  const soon = Boolean(license && license.state === 'trial' && license.days_left <= 7);
+  const licenseChip = $('#license-chip');
+  licenseChip.hidden = !(expired || soon);
+  licenseChip.textContent = expired ? t('Нужен ключ') : soon ? t('Пробный период: {0}', days(license.days_left)) : '';
+  $('#license-panel').hidden = !expired;
+  $('#btn-license-buy').hidden = !(license && license.buy_url);
   const chip = $('#ai-status');
   chip.classList.toggle('ok', ai.enabled && ai.local && ai.available);
   chip.classList.toggle('warn', ai.enabled && !(ai.local && ai.available));
@@ -321,6 +337,9 @@ function bindAiSetup() {
     }
   });
   $('#update-chip').addEventListener('click', openUpdate);
+  $('#license-chip').addEventListener('click', openLicense);
+  $('#btn-license-enter').addEventListener('click', openLicense);
+  $('#btn-license-buy').addEventListener('click', openBuy);
   $('#ai-status').addEventListener('click', () => {
     const ai = state.status && state.status.ai;
     if (ai && !ai.enabled) { showView('settings'); return; }
@@ -807,6 +826,39 @@ function renderSettings() {
       return h('label', { class: 'check' }, radio, label);
     }));
 
+  const license = state.status ? state.status.license : null;
+  const keyInput = h('textarea', { rows: '2', spellcheck: 'false', id: 'license-key', placeholder: 'FC1-…' });
+  const activate = h('button', {
+    type: 'button', class: 'btn small',
+    onclick: async () => {
+      activate.disabled = true;
+      try {
+        state.status.license = await api('/api/license', { key: keyInput.value });
+        toast(t('Ключ принят. Спасибо!'));
+        renderStatus();
+        renderSettings();
+      } catch (error) {
+        toast(error.message, true);
+        activate.disabled = false;
+      }
+    },
+  }, t('Активировать'));
+  const licenseText = !license ? ''
+    : license.state === 'licensed' ? t('Лицензия на имя: {0}. Спасибо за покупку!', license.name)
+      : license.state === 'trial'
+        ? t('Пробный период: осталось {0}. Потом без ключа можно будет смотреть, что будет сделано, '
+          + 'но не чистить и не раскладывать.', days(license.days_left))
+        : t('Пробный период закончился: смотреть, что будет сделано, можно, а чистить, раскладывать '
+          + 'и удалять — нужен ключ.');
+  const licensePanel = h('div', { class: 'panel' },
+    h('h2', {}, t('Лицензия')),
+    h('p', {}, licenseText),
+    license && license.state !== 'licensed' ? [
+      field(t('Ключ из письма'), keyInput),
+      h('div', { class: 'actions' }, activate,
+        license.buy_url ? h('button', { type: 'button', class: 'link', onclick: openBuy }, t('Купить ключ')) : null),
+    ] : null);
+
   const updateNote = h('span', { class: 'hint', 'aria-live': 'polite' });
   const checkNow = h('button', {
     type: 'button', class: 'btn small',
@@ -830,6 +882,7 @@ function renderSettings() {
   }, t('Проверить сейчас'));
 
   body.replaceChildren(
+    licensePanel,
     h('div', { class: 'panel' }, h('h2', {}, t('Язык программы')), languages),
     h('div', { class: 'panel' },
       h('h2', {}, t('Секторы — куда раскладывать')),
@@ -884,6 +937,10 @@ function renderSettings() {
       h('div', { class: 'actions' },
         h('span', {}, t('Установлена версия {0}.', state.status ? state.status.version : '')), checkNow, updateNote)),
   );
+  if (state.focusLicense) {
+    state.focusLicense = false;
+    keyInput.focus();
+  }
   markDirty();
 }
 

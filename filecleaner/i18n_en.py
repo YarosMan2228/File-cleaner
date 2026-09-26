@@ -17,12 +17,14 @@ PLURALS = {
     "объект": ("object", "objects"),
     "файл": ("file", "files"),
     "папка": ("folder", "folders"),
+    "день": ("day", "days"),
 }
 # Все русские формы → форма «один» (чтобы перевести уже сохранённое «3 объекта»).
 PLURAL_FORMS = {
     "объект": "объект", "объекта": "объект", "объектов": "объект",
     "файл": "файл", "файла": "файл", "файлов": "файл",
     "папка": "папка", "папки": "папка", "папок": "папка",
+    "день": "день", "дня": "день", "дней": "день",
 }
 
 EN: dict[str, str] = {
@@ -307,4 +309,18 @@ EN: dict[str, str] = {
     "У тебя последняя версия ({version}).": "You have the latest version ({version}).",
     "Вышла версия {version} (у тебя {current}).": "Version {version} is out (you have {current}).",
     "Скачать: {url}": "Download: {url}",
+    # лицензия: консоль
+    "Лицензия на имя: {name}.": "Licensed to: {name}.",
+    "Пробный период: осталось {days}.": "Trial: {days} left.",
+    "Пробный период закончился. Ввести ключ: filecleaner license FC1-…": "The trial is over. Enter a key: filecleaner license FC1-…",
+    "Ключ принят, спасибо! {line}": "Key accepted, thank you! {line}",
+    "Купить ключ: {url}": "Buy a key: {url}",
+    # лицензия
+    "Это не ключ File Cleaner: он начинается с FC1-.": "This is not a File Cleaner key: it starts with FC1-.",
+    "Ключ повреждён — скопируй его из письма целиком.": "The key is damaged — copy it from the email in full.",
+    "Ключ не подходит — скопируй его из письма целиком.": "The key does not match — copy it from the email in full.",
+    "Этот ключ — для другой версии программы. Обнови File Cleaner.": "This key is for another version of the program. Update File Cleaner.",
+    "Пробный период закончился. Смотреть, что будет сделано, можно и дальше, а чтобы чистить, раскладывать и удалять, нужен ключ (Настройки → Лицензия).": "The trial is over. You can still see what would be done, but cleaning, sorting and deleting need a key (Settings → License).",
+    # лицензия: окно
+    "Ссылки на магазин пока нет.": "There is no store link yet.",
 }

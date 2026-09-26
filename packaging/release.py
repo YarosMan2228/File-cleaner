@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 sys.path.insert(0, str(ROOT))
 
-from filecleaner import __version__  # noqa: E402
+from filecleaner import __version__, licensing  # noqa: E402
 from filecleaner.update import REPO  # noqa: E402
 
 
@@ -60,9 +60,12 @@ def main() -> int:
         return 1
     if not signed(files[0]):
         print("! Установщик не подписан: Windows SmartScreen будет предупреждать (docs/SIGNING.md).")
+    if not licensing.BUY_URL:
+        print("! Нет ссылки на магазин (BUY_URL в filecleaner/licensing.py): после пробного периода купить будет негде.")
 
-    command = ["gh", "release", "create", tag, *map(str, files), "--repo", REPO,
-               "--title", f"File Cleaner {__version__}", "--target", run("git", "rev-parse", "HEAD")]
+    command = ["gh", "release", "create", tag, *map(str, files), "--repo", REPO, "--title", f"File Cleaner {__version__}"]
+    if REPO.lower() in run("git", "remote", "get-url", "origin").lower():  # выпуски — в репозитории с исходниками
+        command += ["--target", run("git", "rev-parse", "HEAD")]
     print("Что нового:\n" + text + "\n")
     print("Будет выполнено:", " ".join(command[:4]), "… --notes-file <CHANGELOG>")
     if "--publish" not in sys.argv:

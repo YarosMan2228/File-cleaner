@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from conftest import write
 
-from filecleaner import ai_setup, config, journal, review, schedule, update
+from filecleaner import ai_setup, config, ed25519, journal, licensing, review, schedule, update
 from filecleaner.analyzers import Finding
 from filecleaner.gui.app import App, Server, Task
 from filecleaner.rules import Rules
@@ -231,3 +231,21 @@ def test_update_check_button_and_notice(gui, monkeypatch):
     current["update"]["check"] = False
     call(gui, "/api/settings", current)
     assert call(gui, "/api/status")[1]["update"] is None               # выключил проверку — напоминания нет
+
+
+def test_license_needed_after_trial(gui, monkeypatch):
+    """После пробного периода окно не чистит и не удаляет, но смотреть и возвращать можно; ключ — в настройках."""
+    secret = bytes(range(32))
+    monkeypatch.setattr(licensing, "PUBLIC_KEY", ed25519.public_key(secret))
+    licensing._save({"trial_started": "2020-01-01"})
+    gui.app._license = None
+    assert call(gui, "/api/status")[1]["license"]["state"] == "expired"
+    status, result = call(gui, "/api/night", {"after": "nothing"})
+    assert status == 402 and "ключ" in result["error"]
+    assert call(gui, "/api/resolve", {"action": "delete", "items": []})[0] == 402
+    assert call(gui, "/api/resolve", {"action": "restore", "items": []})[0] != 402   # вернуть на место — всегда
+
+    assert call(gui, "/api/license", {"key": "FC1-AAAAA-BBBBB"})[0] == 400
+    status, info = call(gui, "/api/license", {"key": licensing.issue(secret, "Покупатель")})
+    assert status == 200 and info["state"] == "licensed" and info["name"] == "Покупатель"
+    assert call(gui, "/api/status")[1]["license"]["state"] == "licensed"
