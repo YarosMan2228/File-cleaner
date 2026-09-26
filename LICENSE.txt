@@ -16,7 +16,10 @@ If you do not agree, do not install or use the Software.
    file names or file contents over the internet. The optional AI feature works only with a
    model running on your own computer (Ollama); the Software refuses to use a model located on
    another computer. The Software opens the Ollama website only when you press the button that
-   says so.
+   says so. Once a day the Software asks GitHub (api.github.com) for the number of its latest
+   version; the request carries only the version you use and, like any internet request, your IP
+   address. The Software never downloads or installs updates by itself. You can turn this check
+   off in Settings.
 
 4. DELETING AND MOVING FILES. The Software deletes and moves files. Without asking, it deletes
    only caches, temporary files and copies that it has compared byte by byte with an original
@@ -60,7 +63,10 @@ FILE CLEANER — ЛИЦЕНЗИОННОЕ СОГЛАШЕНИЕ С ПОЛЬЗОВ
 3. ТВОИ ФАЙЛЫ И ПРИВАТНОСТЬ. Программа работает на твоём компьютере. Она не отправляет в
    интернет ни файлы, ни их имена, ни их содержимое. ИИ (по желанию) работает только с моделью
    на твоём компьютере (Ollama); модель на другом компьютере Программа использовать откажется.
-   Сайт Ollama открывается, только когда ты нажимаешь кнопку с этим названием.
+   Сайт Ollama открывается, только когда ты нажимаешь кнопку с этим названием. Раз в день
+   Программа спрашивает у GitHub (api.github.com) номер своей последней версии; в запросе — только
+   твоя версия и, как у любого запроса в интернет, твой IP-адрес. Сама Программа обновления не
+   скачивает и не ставит. Эту проверку можно выключить в настройках.
 
 4. УДАЛЕНИЕ И ПЕРЕНОС ФАЙЛОВ. Программа удаляет и переносит файлы. Без вопросов она удаляет
    только кэши, временные файлы и копии, сверенные байт в байт с оригиналом, который остаётся

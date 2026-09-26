@@ -639,6 +639,22 @@ def cmd_gui(args, rules: Rules, interactive: bool = False) -> int:
     return run(lambda: Rules.load(path), port=args.port, show_window=not args.no_window)
 
 
+def cmd_update(args, rules: Rules, interactive: bool = False) -> int:
+    from . import update
+
+    try:
+        latest = update.check(rules, force=True)
+    except update.Unreachable:
+        print(red(tr("GitHub не ответил — проверь интернет и попробуй ещё раз.")))
+        return 1
+    if not latest:
+        print(green(tr("У тебя последняя версия ({version}).", version=__version__)))
+        return 0
+    print(yellow(tr("Вышла версия {version} (у тебя {current}).", version=latest["version"], current=__version__)))
+    print(tr("Скачать: {url}", url=latest["url"]))
+    return 0
+
+
 def cmd_schedule(args, rules: Rules, interactive: bool = False) -> int:
     from . import schedule
 
@@ -770,6 +786,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--at", metavar="ЧЧ:ММ", help="во сколько запускать, например 03:00")
     p.add_argument("--no-wake", action="store_true", help="не будить компьютер ради этого")
     p.add_argument("--off", action="store_true", help="выключить ночной запуск")
+    add("update", cmd_update, "проверить, вышла ли новая версия")
     p = add("gui", cmd_gui, "окно программы: всё кнопками")
     p.add_argument("--no-window", action="store_true", help="не открывать окно — только напечатать адрес")
     p.add_argument("--port", type=int, default=0, help="порт (по умолчанию — любой свободный)")

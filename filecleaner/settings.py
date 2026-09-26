@@ -45,6 +45,7 @@ def read(rules: Rules) -> dict:
             "sort_folders": [str(k) for k in rules.get("night.sort_folders", []) or []],
         },
         "ui": {"language": str(rules.get("ui.language", "auto"))},
+        "update": {"check": bool(rules.get("update.check", True))},
         "languages": {"auto": tr("Как в Windows"), **i18n.LANGUAGES},
         "types": [{"id": kind, "name": i18n.type_name(kind)} for kind in config.TYPES],
         "file": str(user_rules_path()),
@@ -146,6 +147,7 @@ def clean(payload: dict) -> tuple[dict, list[dict]]:
         "night.auto_delete": bool(night.get("auto_delete")),
         "night.drives": bool(night.get("drives")),
         "ui.language": language,
+        "update.check": bool((payload.get("update") or {}).get("check", True)),
         "night.sort_folders": _list(night.get("sort_folders", []), tr("Какие папки раскладывать"), 260),
     }
     return values, _sectors(payload.get("sectors", []))

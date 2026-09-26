@@ -18,6 +18,9 @@
 [ui]
 language = "auto"          # язык программы: auto — как в Windows, ru — русский, en — English
 
+[update]
+check = true               # раз в день спросить у GitHub номер новой версии (о тебе и файлах — ничего)
+
 [scan]
 # Где искать: desktop, downloads, documents, pictures, music, videos или любые пути ("B:/Архив").
 roots = ["desktop", "downloads", "documents", "pictures", "music", "videos"]

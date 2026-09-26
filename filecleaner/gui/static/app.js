@@ -217,8 +217,14 @@ async function refreshStatus(first = false) {
   }
 }
 
+const openUpdate = () => api('/api/open', { what: 'update' }).catch((error) => toast(error.message, true));
+
 function renderStatus() {
-  const { ai, review, last } = state.status;
+  const { ai, review, last, update } = state.status;
+  const fresh = $('#update-chip');
+  fresh.hidden = !update;
+  fresh.textContent = update ? t('Вышла версия {0}', update.version) : '';
+  fresh.title = update ? update.notes : '';
   const chip = $('#ai-status');
   chip.classList.toggle('ok', ai.enabled && ai.local && ai.available);
   chip.classList.toggle('warn', ai.enabled && !(ai.local && ai.available));
@@ -314,6 +320,7 @@ function bindAiSetup() {
       toast(error.message, true);
     }
   });
+  $('#update-chip').addEventListener('click', openUpdate);
   $('#ai-status').addEventListener('click', () => {
     const ai = state.status && state.status.ai;
     if (ai && !ai.enabled) { showView('settings'); return; }
@@ -800,6 +807,28 @@ function renderSettings() {
       return h('label', { class: 'check' }, radio, label);
     }));
 
+  const updateNote = h('span', { class: 'hint', 'aria-live': 'polite' });
+  const checkNow = h('button', {
+    type: 'button', class: 'btn small',
+    onclick: async () => {
+      checkNow.disabled = true;
+      updateNote.replaceChildren(t('Проверяю…'));
+      try {
+        const result = await api('/api/update', {});
+        state.status.update = result.update;
+        renderStatus();
+        updateNote.replaceChildren(...(result.update
+          ? [t('Вышла версия {0}.', result.update.version), ' ',
+            h('button', { type: 'button', class: 'link', onclick: openUpdate }, t('Открыть страницу загрузки'))]
+          : [t('У тебя последняя версия.')]));
+      } catch (error) {
+        updateNote.replaceChildren(error.message);
+      } finally {
+        checkNow.disabled = false;
+      }
+    },
+  }, t('Проверить сейчас'));
+
   body.replaceChildren(
     h('div', { class: 'panel' }, h('h2', {}, t('Язык программы')), languages),
     h('div', { class: 'panel' },
@@ -847,6 +876,13 @@ function renderSettings() {
       field(t('Какие папки раскладывать'), textArea(draft.night.sort_folders.join('\n'),
         (v) => { draft.night.sort_folders = splitLines(v); }, 3),
         t('downloads, desktop, documents или путь — каждая с новой строки. Подпапки переносятся только в Загрузках и на Рабочем столе.'))),
+    h('div', { class: 'panel' },
+      h('h2', {}, t('Обновления')),
+      toggle(draft.update.check, t('Раз в день проверять, вышла ли новая версия'), (on) => { draft.update.check = on; }),
+      h('p', { class: 'hint' }, t('Программа спрашивает у GitHub только номер последней версии — о тебе и твоих файлах '
+        + 'ничего не отправляется. Сама ничего не скачивает и не ставит: покажет ссылку на страницу загрузки.')),
+      h('div', { class: 'actions' },
+        h('span', {}, t('Установлена версия {0}.', state.status ? state.status.version : '')), checkNow, updateNote)),
   );
   markDirty();
 }

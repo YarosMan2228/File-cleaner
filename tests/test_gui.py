@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from conftest import write
 
-from filecleaner import ai_setup, config, journal, review, schedule
+from filecleaner import ai_setup, config, journal, review, schedule, update
 from filecleaner.analyzers import Finding
 from filecleaner.gui.app import App, Server, Task
 from filecleaner.rules import Rules
@@ -208,3 +208,26 @@ def test_without_ollama_ai_can_be_switched_off(gui, rules, monkeypatch):
     assert not setup["installed"] and not setup["running"] and not setup["ready"]
     assert call(gui, "/api/ai/start", {})[1] == {"started": False}
     assert call(gui, "/api/ai/disable", {})[0] == 200 and Rules.load().get("ai.enabled") is False
+
+
+def test_update_check_button_and_notice(gui, monkeypatch):
+    """«Проверить сейчас» → в шапке «Вышла версия», по нажатию открывается только страница выпусков."""
+    import webbrowser
+
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    status, result = call(gui, "/api/update", {})
+    assert status == 502 and "GitHub" in result["error"]              # в тестах интернета нет — так и говорим
+
+    fresh = {"version": "9.0.0", "url": update.PAGE + "tag/v9.0.0", "notes": ""}
+    monkeypatch.setattr(update, "check", lambda rules, force=False: fresh)
+    status, result = call(gui, "/api/update", {})
+    assert status == 200 and result["update"] == fresh
+    assert call(gui, "/api/status")[1]["update"] == fresh
+    call(gui, "/api/open", {"what": "update"})
+    assert opened == [fresh["url"]]
+
+    current = call(gui, "/api/settings")[1]
+    current["update"]["check"] = False
+    call(gui, "/api/settings", current)
+    assert call(gui, "/api/status")[1]["update"] is None               # выключил проверку — напоминания нет

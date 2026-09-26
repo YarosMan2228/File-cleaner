@@ -301,4 +301,10 @@ EN: dict[str, str] = {
     "учёба: лекции, конспекты, лабораторные и практические работы, домашние задания, курсовые и дипломные работы, рефераты, материалы курсов": "study: lectures, notes, lab and practical work, homework, coursework and theses, essays, course materials",
     "работа: рабочие документы, отчёты, презентации, таблицы, чертежи и материалы проектов": "work: work documents, reports, presentations, spreadsheets, drawings and project materials",
     "образы дисков и виртуальные машины": "disk images and virtual machines",
+    # обновления: окно
+    "GitHub не ответил — проверь интернет и попробуй ещё раз.": "GitHub did not respond — check your internet connection and try again.",
+    # обновления: консоль
+    "У тебя последняя версия ({version}).": "You have the latest version ({version}).",
+    "Вышла версия {version} (у тебя {current}).": "Version {version} is out (you have {current}).",
+    "Скачать: {url}": "Download: {url}",
 }

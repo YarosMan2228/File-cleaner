@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from filecleaner import config, i18n, review  # noqa: E402
+from filecleaner import config, i18n, review, update  # noqa: E402
 from filecleaner.rules import Rules  # noqa: E402
 
 OLD = time.time() - 40 * 86400  # «давно»: старше всех порогов свежести
@@ -61,6 +61,17 @@ def rules(tmp_path):
     r.data["ui"]["language"] = "ru"
     r.data["sector"] = [dict(s) for s in TEST_SECTORS]
     return r
+
+
+class _Offline:
+    def open(self, *args, **kwargs):
+        raise OSError("в тестах интернета нет")
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """Тесты не ходят в интернет: GitHub «не отвечает», пока тест не подставит свой."""
+    monkeypatch.setattr(update, "_OPENER", _Offline())
 
 
 @pytest.fixture(autouse=True)

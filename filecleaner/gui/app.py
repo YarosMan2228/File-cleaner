@@ -18,7 +18,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .. import __version__, ai_setup, config, i18n, journal, night, review, schedule, settings
+from .. import __version__, ai_setup, config, i18n, journal, night, review, schedule, settings, update
 from ..ai import LocalAI
 from ..analyzers import Finding
 from ..fsutil import display, is_under
@@ -155,6 +155,7 @@ class App:
         self.lock = threading.Lock()
         self.last_seen = time.monotonic()
         self._ai: tuple[float, dict] | None = None
+        self.update: dict | None = None  # вышедшая новая версия, если есть
         self.apply_language()
 
     def apply_language(self) -> None:
@@ -177,8 +178,25 @@ class App:
         return {
             "version": __version__, "lang": i18n.language(), "ai": self.ai_status(), "last": night.last_run(),
             "review": {"count": len(waiting), "bytes": sum(i["size"] for i in waiting)},
-            "task": self.task.snapshot() if self.task else None,
+            "task": self.task.snapshot() if self.task else None, "update": self.update,
         }
+
+    def check_update(self) -> dict:
+        """Ты нажал «Проверить сейчас»: спрашиваем GitHub сразу."""
+        try:
+            self.update = update.check(self.load_rules(), force=True)
+        except update.Unreachable as exc:
+            raise ApiError(HTTPStatus.BAD_GATEWAY, tr("GitHub не ответил — проверь интернет и попробуй ещё раз.")) from exc
+        return {"update": self.update, "version": __version__}
+
+    def check_update_later(self) -> None:
+        """Раз в день, в фоне и молча: вышла ли новая версия (если проверка не выключена)."""
+        def work() -> None:
+            try:
+                self.update = update.check(self.load_rules())
+            except Exception:  # noqa: BLE001 — проверка обновлений не должна мешать работе
+                pass
+        threading.Thread(target=work, name="filecleaner-update", daemon=True).start()
 
     # ---------------------------------------------------------------- задачи
     def start(self, kind: str, title: str, work: Callable[[Task], dict]) -> dict:
@@ -287,6 +305,8 @@ class App:
             if not ours or target.suffix.lower() != ".html" or not target.exists():
                 raise ApiError(HTTPStatus.BAD_REQUEST, tr("Это не отчёт программы."))
             os.startfile(target)  # type: ignore[attr-defined]  # откроется в браузере
+        elif what == "update":
+            webbrowser.open((self.update or {}).get("url") or update.PAGE + "latest")  # только страница выпусков
         elif what == "ollama-site":
             webbrowser.open(ai_setup.OLLAMA_SITE)  # официальный сайт; сам установщик не скачиваем
         elif what == "rules":
@@ -336,6 +356,8 @@ class App:
             raise ApiError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
         self._ai = None  # модель или «включён» могли поменяться
         self.apply_language()
+        if not (body.get("update") or {}).get("check", True):
+            self.update = None  # проверку выключили — и напоминание убираем
         return self.read_settings()
 
     def reveal_item(self, batch_path: str, item_id: str) -> dict:
@@ -377,6 +399,8 @@ class App:
             return self.pull_model()
         if path == "/api/ai/disable":
             return self.disable_ai()
+        if path == "/api/update":
+            return self.check_update()
         if path == "/api/stay-awake":
             if self.task is not None:
                 self.task.stop.set()
@@ -493,6 +517,7 @@ def run(load_rules: Callable[[], Rules] = Rules.load, port: int = 0, show_window
     app = App(load_rules)
     server = Server(app, port)
     threading.Thread(target=server.serve_forever, name="filecleaner-http", daemon=True).start()
+    app.check_update_later()
     window = open_window(server.url) if show_window else None
     if not show_window:
         print(tr("Окно программы: {url}\nЗакрыть — Ctrl+C.", url=server.url), flush=True)
