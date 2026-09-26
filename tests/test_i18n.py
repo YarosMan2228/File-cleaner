@@ -5,6 +5,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
+import pytest
 from conftest import write
 
 from filecleaner import i18n, journal, organizer, review
@@ -190,3 +191,78 @@ def test_default_sectors_follow_the_language(sandbox, monkeypatch):
 
     path.write_text('[[sector]]\nname = "Учёба"\nkeywords = ["lab"]\n', encoding="utf-8")
     assert [s["name"] for s in Rules.load().sectors] == ["Учёба"]
+
+
+# ======================================================================= английская консоль
+def test_english_console_speaks_english(sandbox, rules, capsys, monkeypatch, tmp_path):
+    """Язык берётся из правил до первого вывода: справка, меню и команды — по-английски."""
+    from argparse import Namespace
+
+    from filecleaner import cli, config, refs
+
+    monkeypatch.setattr(refs, "scan_references", lambda *a, **k: {})  # не обходить настоящую систему
+    folders = {name.lower(): sandbox / name for name in ("Downloads", "Documents", "Desktop")}
+    monkeypatch.setattr(config, "user_folders", lambda: folders)
+    config.DATA_DIR.mkdir(parents=True)
+    (config.DATA_DIR / "rules.toml").write_text('[ui]\nlanguage = "en"\n[ai]\nenabled = false\n', encoding="utf-8")
+    rules.data["night"]["drives"] = False
+    dl = sandbox / "Downloads"
+    write(sandbox / "Documents" / "report.pdf", b"r" * 5000)
+    write(dl / "report (1).pdf", b"r" * 5000)
+    write(dl / "notes.txt", b"n" * 3000)
+    write(sandbox / "Desktop" / "log.txt", b"the same line again and again\n" * 4000)
+    with journal.Session("check", "Проверка") as session:           # записано, когда программа была по-русски
+        session.record("delete", path=str(dl / "old.tmp"), size=10)
+
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    assert i18n.language() == "en"
+    for argv in (["history"], ["license"], ["update"], ["rules"]):
+        cli.main(argv)
+    monkeypatch.setattr("builtins.input", lambda prompt: print(prompt) or "0")
+    assert cli.main([]) == 0                                             # меню и сразу «0»
+    cli.cmd_scan(Namespace(), rules)
+    cli.cmd_check(Namespace(apply=True, yes=True), rules)               # копия — в «Ready for approval»
+    cli.cmd_approve(Namespace(yes=True), rules)
+    cli.cmd_sort(Namespace(folder=str(dl), apply=False, yes=False), rules)
+    cli.cmd_sort(Namespace(folder=str(dl), apply=True, yes=True), rules)
+    cli.cmd_compress(Namespace(folder=str(sandbox / "Desktop"), apply=False, yes=False), rules)
+    cli.main(["undo", "--yes"])
+    cli.cmd_night(Namespace(apply=False, yes=False, after=None), rules)
+
+    out = capsys.readouterr().out.replace(str(tmp_path), "")          # пути песочницы — не текст программы
+    assert "COMMAND" in out and "Choice: " in out and "Sorted: 1 object." in out
+    assert re.search(r"Check +deleted 1 object", out)                   # старое русское название — по-английски
+    assert not CYRILLIC.search(out), [line for line in out.splitlines() if CYRILLIC.search(line)]
+
+
+def test_confirm_takes_yes_in_both_languages(monkeypatch):
+    """«Да» понимается по-русски и по-английски при любом языке; подсказка — на языке программы."""
+    from filecleaner import cli
+
+    prompts, replies = [], []
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or replies.pop(0))
+    for lang, hint in (("ru", "[д/н]"), ("en", "[y/n]")):
+        i18n.set_language(lang)
+        replies[:] = ["y", "YES", "д", "Да", " да ", "n", "нет", "no", ""]
+        assert [cli.confirm("Go?") for _ in range(9)] == [True] * 5 + [False] * 4
+        assert prompts[-1] == f"Go? {hint}: "
+
+
+def test_console_texts_go_through_tr():
+    """Русская строка в cli.py вне tr() — забытый перевод (кроме склонений plural, docstring и ответов «да»)."""
+    tree = ast.parse((ROOT / "cli.py").read_text(encoding="utf-8"))
+    allowed: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef)) and ast.get_docstring(node) is not None:
+            allowed.add(id(node.body[0].value))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.args:
+            if node.func.id == "tr":
+                allowed.add(id(node.args[0]))
+            elif node.func.id == "plural":
+                allowed.update(id(arg) for arg in node.args[1:])
+        elif isinstance(node, ast.Assign) and {getattr(t, "id", "") for t in node.targets} & {"YES", "QUIT"}:
+            allowed.update(id(n) for n in ast.walk(node.value))       # что вводят в ответ, а не что показывают
+    russian = [node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)
+               and isinstance(node.value, str) and CYRILLIC.search(node.value) and id(node) not in allowed]
+    assert not russian, russian
